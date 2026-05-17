@@ -1,8 +1,10 @@
 import React from 'react';
-import { Text, View, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import HomeScreen from '../screens/HomeScreen';
 import SearchScreen from '../screens/SearchScreen';
@@ -21,8 +23,6 @@ import { useAppTheme } from '../theme/ThemeContext';
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
-const MINI_PLAYER_HEIGHT = 60;
-
 function MiniPlayerWithNavigation() {
   const navigation = useNavigation();
 
@@ -38,6 +38,13 @@ function MiniPlayerWithNavigation() {
 function MainTabs() {
   const { colors } = useAppTheme();
   const playMusic = usePlayerStore((s) => s.playMusic);
+  const insets = useSafeAreaInsets();
+
+  // 底部安全区域：全面屏手势手机有 home indicator 区域，
+  // 虚拟按键手机无需额外 padding（系统导航栏已占空间）。
+  // 确保至少保留 4px 的基础内边距。
+  const bottomPadding = Math.max(insets.bottom, 4);
+  const tabBarHeight = 52 + bottomPadding;
 
   return (
     <View style={styles.tabContainer}>
@@ -50,6 +57,12 @@ function MainTabs() {
             backgroundColor: colors.tabBarBg,
             borderTopColor: colors.divider,
             borderTopWidth: StyleSheet.hairlineWidth,
+            paddingBottom: bottomPadding,
+            height: tabBarHeight,
+          },
+          tabBarLabelStyle: {
+            fontSize: 11,
+            fontWeight: '500',
           },
         }}
       >
@@ -58,7 +71,9 @@ function MainTabs() {
           component={HomeScreen}
           options={{
             tabBarLabel: '首页',
-            tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>🏠</Text>,
+            tabBarIcon: ({ color, size }) => (
+              <MaterialCommunityIcons name="home-variant" size={size} color={color} />
+            ),
           }}
         />
         <Tab.Screen
@@ -66,7 +81,9 @@ function MainTabs() {
           component={SearchScreen}
           options={{
             tabBarLabel: '搜索',
-            tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>🔍</Text>,
+            tabBarIcon: ({ color, size }) => (
+              <MaterialCommunityIcons name="magnify" size={size} color={color} />
+            ),
           }}
         />
         <Tab.Screen
@@ -74,7 +91,9 @@ function MainTabs() {
           component={UserScreen}
           options={{
             tabBarLabel: '我的',
-            tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>👤</Text>,
+            tabBarIcon: ({ color, size }) => (
+              <MaterialCommunityIcons name="account-circle-outline" size={size} color={color} />
+            ),
           }}
         />
         <Tab.Screen
@@ -82,12 +101,14 @@ function MainTabs() {
           component={SettingsScreen}
           options={{
             tabBarLabel: '设置',
-            tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>⚙️</Text>,
+            tabBarIcon: ({ color, size }) => (
+              <MaterialCommunityIcons name="cog-outline" size={size} color={color} />
+            ),
           }}
         />
       </Tab.Navigator>
       {playMusic && (
-        <View style={styles.miniPlayerContainer}>
+        <View style={[styles.miniPlayerContainer, { bottom: tabBarHeight }]}>
           <MiniPlayerWithNavigation />
         </View>
       )}
@@ -100,7 +121,7 @@ export default function AppNavigator() {
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="MainTabs" component={MainTabs} />
-        <Stack.Screen name="Player" component={PlayerScreen} options={{ animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="Player" component={PlayerScreen} options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="PlaylistDetail" component={PlaylistDetailScreen as any} />
         <Stack.Screen name="ArtistDetail" component={ArtistDetailScreen as any} />
         <Stack.Screen name="AlbumDetail" component={AlbumDetailScreen as any} />
@@ -119,7 +140,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 80,
     zIndex: 10,
   },
 });

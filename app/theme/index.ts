@@ -1,15 +1,9 @@
 import { LightColors, DarkColors } from './colors';
 import { Typography } from './typography';
 import { Spacing, BorderRadius, IconSize } from './spacing';
+import type { AppTheme } from './types';
 
-export interface AppTheme {
-  colors: typeof LightColors;
-  typography: typeof Typography;
-  spacing: typeof Spacing;
-  borderRadius: typeof BorderRadius;
-  iconSize: typeof IconSize;
-  dark: boolean;
-}
+export { type AppTheme } from './types';
 
 export const lightTheme: AppTheme = {
   colors: LightColors,

@@ -13,10 +13,26 @@ type Track = {
   duration: number;
 };
 
+type ProgressUpdate = {
+  position: number;   // seconds
+  duration: number;   // seconds
+  isPlaying: boolean;
+};
+
 let soundRef: Audio.Sound | null = null;
 let currentTrackId: string | null = null;
+let onPlaybackEndCallback: (() => void) | null = null;
+let onProgressUpdateCallback: ((update: ProgressUpdate) => void) | null = null;
 
 export const isPlayerAvailable = Platform.OS !== 'web';
+
+export function setOnPlaybackEnd(callback: (() => void) | null) {
+  onPlaybackEndCallback = callback;
+}
+
+export function setOnProgressUpdate(callback: ((update: ProgressUpdate) => void) | null) {
+  onProgressUpdateCallback = callback;
+}
 
 export async function setupPlayer(): Promise<void> {
   try {
@@ -48,13 +64,31 @@ function isSuccessStatus(status: AVPlaybackStatus): status is AVPlaybackStatusSu
   return status.isLoaded;
 }
 
+function handlePlaybackStatusUpdate(status: AVPlaybackStatus) {
+  if (!isSuccessStatus(status)) return;
+
+  // 实时进度回调
+  if (onProgressUpdateCallback && status.isPlaying) {
+    const position = status.positionMillis / 1000;
+    const duration = status.durationMillis ? status.durationMillis / 1000 : 0;
+    onProgressUpdateCallback({ position, duration, isPlaying: true });
+  }
+
+  // 歌曲播放结束 → 自动下一首
+  if (status.didJustFinish && !status.isLooping) {
+    onPlaybackEndCallback?.();
+  }
+}
+
 export async function playSong(song: SongResult, url: string): Promise<void> {
   try {
+    // 同一首歌且 soundRef 存在 → 直接播放
     if (soundRef && currentTrackId === String(song.id)) {
-      await soundRef.playAsync();
+      await soundRef.setStatusAsync({ shouldPlay: true, positionMillis: 0 });
       return;
     }
 
+    // 卸载旧音频
     if (soundRef) {
       await soundRef.unloadAsync();
       soundRef = null;
@@ -63,6 +97,7 @@ export async function playSong(song: SongResult, url: string): Promise<void> {
     const { sound } = await Audio.Sound.createAsync(
       { uri: url },
       { shouldPlay: true },
+      handlePlaybackStatusUpdate,
     );
     soundRef = sound;
     currentTrackId = String(song.id);
@@ -119,7 +154,6 @@ export async function setVolume(volume: number): Promise<void> {
 }
 
 export async function skipToNext(): Promise<void> {}
-
 export async function skipToPrevious(): Promise<void> {}
 
 export async function getPlayerState(): Promise<string | undefined> {
@@ -176,4 +210,8 @@ export async function getDuration(): Promise<number> {
 
 export function getSoundRef(): Audio.Sound | null {
   return soundRef;
+}
+
+export function hasSoundRef(): boolean {
+  return soundRef !== null;
 }

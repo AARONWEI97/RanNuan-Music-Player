@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,13 +7,14 @@ import {
   StyleSheet,
   RefreshControl,
 } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { RootStackScreenProps, SongResult } from '../types';
 import { getPlaylistDetail } from '../api/music';
 import { usePlayer } from '../hooks/usePlayer';
 import { usePlaylist } from '../hooks/usePlaylist';
+import { useAppTheme } from '../theme/ThemeContext';
 import SongList from '../components/music/SongList';
 import NetworkImage from '../components/common/NetworkImage';
-import { LightColors } from '../theme/colors';
 import { Spacing, BorderRadius } from '../theme/spacing';
 import { Typography } from '../theme/typography';
 import { formatPlayCount } from '../utils/format';
@@ -22,6 +23,8 @@ export default function PlaylistDetailScreen({
   route,
 }: RootStackScreenProps<'PlaylistDetail'>) {
   const { id } = route.params;
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const { playSong } = usePlayer();
   const { playAll } = usePlaylist();
 
@@ -88,17 +91,18 @@ export default function PlaylistDetailScreen({
 
   if (loading) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={LightColors.primary} />
+      <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={styles.centerContainer}>
-        <Text style={styles.errorText}>加载失败</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={fetchData}>
+      <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
+        <MaterialCommunityIcons name="alert-circle-outline" size={48} color={colors.textSecondary} />
+        <Text style={[styles.errorText, { color: colors.textSecondary }]}>加载失败</Text>
+        <TouchableOpacity style={[styles.retryButton, { backgroundColor: colors.primary }]} onPress={fetchData}>
           <Text style={styles.retryText}>重试</Text>
         </TouchableOpacity>
       </View>
@@ -110,19 +114,22 @@ export default function PlaylistDetailScreen({
       <View style={styles.coverSection}>
         <NetworkImage uri={playlist?.coverImgUrl} style={styles.cover} />
         <View style={styles.infoSection}>
-          <Text style={styles.name} numberOfLines={2}>
+          <Text style={[styles.name, { color: colors.text }]} numberOfLines={2}>
             {playlist?.name}
           </Text>
           <View style={styles.creatorRow}>
             <NetworkImage uri={playlist?.creator?.avatarUrl} style={styles.avatar} />
-            <Text style={styles.creatorName} numberOfLines={1}>
+            <Text style={[styles.creatorName, { color: colors.textSecondary }]} numberOfLines={1}>
               {playlist?.creator?.nickname}
             </Text>
           </View>
           {playlist?.playCount > 0 && (
-            <Text style={styles.playCount}>
-              {formatPlayCount(playlist.playCount)}次播放
-            </Text>
+            <View style={styles.playCountRow}>
+              <MaterialCommunityIcons name="play-outline" size={14} color={colors.textTertiary} />
+              <Text style={[styles.playCount, { color: colors.textTertiary }]}>
+                {formatPlayCount(playlist.playCount)}次播放
+              </Text>
+            </View>
           )}
         </View>
       </View>
@@ -130,21 +137,21 @@ export default function PlaylistDetailScreen({
       {playlist?.tags && playlist.tags.length > 0 && (
         <View style={styles.tagsRow}>
           {playlist.tags.map((tag: string) => (
-            <View key={tag} style={styles.tag}>
-              <Text style={styles.tagText}>{tag}</Text>
+            <View key={tag} style={[styles.tag, { backgroundColor: `${colors.primary}15` }]}>
+              <Text style={[styles.tagText, { color: colors.primary }]}>{tag}</Text>
             </View>
           ))}
         </View>
       )}
 
       {playlist?.description ? (
-        <Text style={styles.description} numberOfLines={3}>
+        <Text style={[styles.description, { color: colors.textSecondary }]} numberOfLines={3}>
           {playlist.description}
         </Text>
       ) : null}
 
-      <TouchableOpacity style={styles.playAllButton} onPress={handlePlayAll}>
-        <Text style={styles.playAllIcon}>▶</Text>
+      <TouchableOpacity style={[styles.playAllButton, { backgroundColor: colors.primary }]} onPress={handlePlayAll}>
+        <MaterialCommunityIcons name="play" size={18} color="#ffffff" />
         <Text style={styles.playAllText}>播放全部</Text>
         <Text style={styles.songCount}>({songs.length}首)</Text>
       </TouchableOpacity>
@@ -152,7 +159,7 @@ export default function PlaylistDetailScreen({
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <SongList
         songs={songs}
         onSongPress={handleSongPress}
@@ -162,8 +169,8 @@ export default function PlaylistDetailScreen({
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={[LightColors.primary]}
-            tintColor={LightColors.primary}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
           />
         }
       />
@@ -171,26 +178,24 @@ export default function PlaylistDetailScreen({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: LightColors.background,
   },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: LightColors.background,
   },
   errorText: {
     ...Typography.body1,
-    color: LightColors.textSecondary,
-    marginBottom: Spacing.md,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.lg,
   },
   retryButton: {
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.sm,
-    backgroundColor: LightColors.primary,
     borderRadius: BorderRadius.md,
   },
   retryText: {
@@ -208,7 +213,7 @@ const styles = StyleSheet.create({
     width: 140,
     height: 140,
     borderRadius: BorderRadius.lg,
-    backgroundColor: LightColors.surfaceVariant,
+    backgroundColor: colors.surfaceVariant,
   },
   infoSection: {
     flex: 1,
@@ -217,7 +222,6 @@ const styles = StyleSheet.create({
   },
   name: {
     ...Typography.h3,
-    color: LightColors.text,
     fontWeight: '600',
     marginBottom: Spacing.sm,
   },
@@ -230,17 +234,20 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: LightColors.surfaceVariant,
+    backgroundColor: colors.surfaceVariant,
   },
   creatorName: {
     ...Typography.caption,
-    color: LightColors.textSecondary,
     marginLeft: Spacing.xs,
     flex: 1,
   },
+  playCountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   playCount: {
     ...Typography.caption,
-    color: LightColors.textTertiary,
+    marginLeft: 4,
   },
   tagsRow: {
     flexDirection: 'row',
@@ -251,19 +258,16 @@ const styles = StyleSheet.create({
   tag: {
     paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.xs,
-    backgroundColor: `${LightColors.primary}15`,
     borderRadius: BorderRadius.full,
     marginRight: Spacing.xs,
     marginBottom: Spacing.xs,
   },
   tagText: {
     ...Typography.overline,
-    color: LightColors.primary,
     fontSize: 11,
   },
   description: {
     ...Typography.caption,
-    color: LightColors.textSecondary,
     paddingHorizontal: Spacing.lg,
     marginBottom: Spacing.md,
     lineHeight: 18,
@@ -275,18 +279,13 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    backgroundColor: LightColors.primary,
     borderRadius: BorderRadius.xl,
-  },
-  playAllIcon: {
-    fontSize: 14,
-    color: '#ffffff',
-    marginRight: Spacing.xs,
   },
   playAllText: {
     ...Typography.body2,
     color: '#ffffff',
     fontWeight: '600',
+    marginLeft: Spacing.xs,
   },
   songCount: {
     ...Typography.caption,
@@ -296,4 +295,5 @@ const styles = StyleSheet.create({
   listContent: {
     paddingBottom: Spacing.xxxl,
   },
-});
+  });
+}

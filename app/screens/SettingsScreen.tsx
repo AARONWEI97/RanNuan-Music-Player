@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Linking } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { useSettingsStore } from '../store/settingsStore';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -22,9 +23,9 @@ import { musicParser } from '../services/musicParserService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const THEME_OPTIONS = [
-  { label: '浅色', value: 'light' as const },
-  { label: '深色', value: 'dark' as const },
-  { label: '跟随系统', value: 'system' as const },
+  { label: '浅色', value: 'light' as const, icon: 'white-balance-sunny' as const },
+  { label: '深色', value: 'dark' as const, icon: 'moon-waning-crescent' as const },
+  { label: '跟随系统', value: 'system' as const, icon: 'theme-light-dark' as const },
 ];
 
 const LANGUAGE_OPTIONS = [
@@ -38,6 +39,17 @@ const QUALITY_OPTIONS = [
   { label: '极高', value: 'exhigh' },
   { label: '无损', value: 'lossless' },
 ];
+
+const SECTION_ICONS: Record<string, React.ComponentProps<typeof MaterialCommunityIcons>['name']> = {
+  '外观': 'palette-outline',
+  '语言': 'translate',
+  '网络': 'web',
+  '播放': 'play-circle-outline',
+  '歌词': 'text-box-outline',
+  '音源解析': 'music-circle-outline',
+  '通用': 'cog-outline',
+  '关于': 'information-outline',
+};
 
 export default function SettingsScreen() {
   const { colors } = useAppTheme();
@@ -120,21 +132,34 @@ export default function SettingsScreen() {
 
   const renderSection = (title: string, children: React.ReactNode) => (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      <View style={styles.sectionContent}>{children}</View>
+      <View style={styles.sectionTitleRow}>
+        <MaterialCommunityIcons
+          name={SECTION_ICONS[title] || 'cog-outline'}
+          size={18}
+          color={colors.primary}
+        />
+        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>{title}</Text>
+      </View>
+      <View style={[styles.sectionContent, { backgroundColor: colors.card }]}>{children}</View>
     </View>
   );
 
   const renderThemeSelector = () => (
     <View style={styles.optionRow}>
-      <Text style={styles.optionLabel}>主题模式</Text>
-      <View style={styles.selectorContainer}>
+      <Text style={[styles.optionLabel, { color: colors.text }]}>主题模式</Text>
+      <View style={[styles.selectorContainer, { backgroundColor: colors.surface }]}>
         {THEME_OPTIONS.map((opt) => (
           <TouchableOpacity
             key={opt.value}
-            style={[styles.selectorOption, theme === opt.value && styles.selectorOptionActive]}
+            style={[styles.selectorOption, theme === opt.value && { backgroundColor: colors.primary }]}
             onPress={() => setTheme(opt.value)}
           >
+            <MaterialCommunityIcons
+              name={opt.icon}
+              size={14}
+              color={theme === opt.value ? '#ffffff' : colors.textSecondary}
+              style={{ marginRight: 4 }}
+            />
             <Text style={[styles.selectorText, theme === opt.value && styles.selectorTextActive]}>
               {opt.label}
             </Text>
@@ -146,12 +171,12 @@ export default function SettingsScreen() {
 
   const renderLanguageSelector = () => (
     <View style={styles.optionRow}>
-      <Text style={styles.optionLabel}>语言</Text>
-      <View style={styles.selectorContainer}>
+      <Text style={[styles.optionLabel, { color: colors.text }]}>语言</Text>
+      <View style={[styles.selectorContainer, { backgroundColor: colors.surface }]}>
         {LANGUAGE_OPTIONS.map((opt) => (
           <TouchableOpacity
             key={opt.value}
-            style={[styles.selectorOption, language === opt.value && styles.selectorOptionActive]}
+            style={[styles.selectorOption, language === opt.value && { backgroundColor: colors.primary }]}
             onPress={() => setLanguage(opt.value)}
           >
             <Text style={[styles.selectorText, language === opt.value && styles.selectorTextActive]}>
@@ -165,12 +190,12 @@ export default function SettingsScreen() {
 
   const renderQualitySelector = () => (
     <View style={styles.optionRow}>
-      <Text style={styles.optionLabel}>音质选择</Text>
-      <View style={styles.selectorContainer}>
+      <Text style={[styles.optionLabel, { color: colors.text }]}>音质选择</Text>
+      <View style={[styles.selectorContainer, { backgroundColor: colors.surface }]}>
         {QUALITY_OPTIONS.map((opt) => (
           <TouchableOpacity
             key={opt.value}
-            style={[styles.selectorOption, musicQuality === opt.value && styles.selectorOptionActive]}
+            style={[styles.selectorOption, musicQuality === opt.value && { backgroundColor: colors.primary }]}
             onPress={() => setMusicQuality(opt.value)}
           >
             <Text style={[styles.selectorText, musicQuality === opt.value && styles.selectorTextActive]}>
@@ -184,10 +209,10 @@ export default function SettingsScreen() {
 
   const renderApiUrlInput = () => (
     <View style={styles.optionColumn}>
-      <Text style={styles.optionLabel}>API 地址</Text>
+      <Text style={[styles.optionLabel, { color: colors.text }]}>API 地址</Text>
       <View style={styles.apiUrlRow}>
         <TextInput
-          style={styles.apiUrlInput}
+          style={[styles.apiUrlInput, { color: colors.text, backgroundColor: colors.surface }]}
           value={apiUrlInput}
           onChangeText={setApiUrlInput}
           placeholder={DEFAULT_API_URL}
@@ -197,19 +222,19 @@ export default function SettingsScreen() {
           autoCapitalize="none"
           autoCorrect={false}
         />
-        <TouchableOpacity style={styles.apiUrlSave} onPress={handleApiUrlSubmit}>
+        <TouchableOpacity style={[styles.apiUrlSave, { backgroundColor: colors.primary }]} onPress={handleApiUrlSubmit}>
           <Text style={styles.apiUrlSaveText}>保存</Text>
         </TouchableOpacity>
       </View>
       <TouchableOpacity onPress={handleResetApiUrl}>
-        <Text style={styles.resetText}>重置为默认</Text>
+        <Text style={[styles.resetText, { color: colors.primary }]}>重置为默认</Text>
       </TouchableOpacity>
     </View>
   );
 
   const renderToggle = (label: string, value: boolean, onToggle: (v: boolean) => void) => (
     <View style={styles.optionRow}>
-      <Text style={styles.optionLabel}>{label}</Text>
+      <Text style={[styles.optionLabel, { color: colors.text }]}>{label}</Text>
       <Switch
         value={value}
         onValueChange={onToggle}
@@ -225,11 +250,11 @@ export default function SettingsScreen() {
       {enableMusicParsing && (
         <>
           <View style={styles.optionColumn}>
-            <Text style={styles.optionLabel}>自定义音源 API</Text>
-            <Text style={styles.optionHint}>第三方音源解析接口地址</Text>
+            <Text style={[styles.optionLabel, { color: colors.text }]}>自定义音源 API</Text>
+            <Text style={[styles.optionHint, { color: colors.textTertiary }]}>第三方音源解析接口地址</Text>
             <View style={styles.apiUrlRow}>
               <TextInput
-                style={styles.apiUrlInput}
+                style={[styles.apiUrlInput, { color: colors.text, backgroundColor: colors.surface }]}
                 value={customApiUrlInput}
                 onChangeText={setCustomApiUrlInput}
                 placeholder="https://example.com/api"
@@ -240,17 +265,17 @@ export default function SettingsScreen() {
                 autoCorrect={false}
                 keyboardType="url"
               />
-              <TouchableOpacity style={styles.apiUrlSave} onPress={handleCustomApiUrlSubmit}>
+              <TouchableOpacity style={[styles.apiUrlSave, { backgroundColor: colors.primary }]} onPress={handleCustomApiUrlSubmit}>
                 <Text style={styles.apiUrlSaveText}>保存</Text>
               </TouchableOpacity>
             </View>
           </View>
           <View style={styles.optionColumn}>
-            <Text style={styles.optionLabel}>落雪音乐 API</Text>
-            <Text style={styles.optionHint}>LxMusic 音源解析服务地址</Text>
+            <Text style={[styles.optionLabel, { color: colors.text }]}>落雪音乐 API</Text>
+            <Text style={[styles.optionHint, { color: colors.textTertiary }]}>LxMusic 音源解析服务地址</Text>
             <View style={styles.apiUrlRow}>
               <TextInput
-                style={styles.apiUrlInput}
+                style={[styles.apiUrlInput, { color: colors.text, backgroundColor: colors.surface }]}
                 value={lxMusicUrlInput}
                 onChangeText={setLxMusicUrlInput}
                 placeholder="https://lxmusicapi.pages.dev"
@@ -261,17 +286,17 @@ export default function SettingsScreen() {
                 autoCorrect={false}
                 keyboardType="url"
               />
-              <TouchableOpacity style={styles.apiUrlSave} onPress={handleLxMusicUrlSubmit}>
+              <TouchableOpacity style={[styles.apiUrlSave, { backgroundColor: colors.primary }]} onPress={handleLxMusicUrlSubmit}>
                 <Text style={styles.apiUrlSaveText}>保存</Text>
               </TouchableOpacity>
             </View>
           </View>
           <View style={styles.optionColumn}>
-            <Text style={styles.optionLabel}>解锁服务地址</Text>
-            <Text style={styles.optionHint}>UnblockNeteaseMusic 服务端地址</Text>
+            <Text style={[styles.optionLabel, { color: colors.text }]}>解锁服务地址</Text>
+            <Text style={[styles.optionHint, { color: colors.textTertiary }]}>UnblockNeteaseMusic 服务端地址</Text>
             <View style={styles.apiUrlRow}>
               <TextInput
-                style={styles.apiUrlInput}
+                style={[styles.apiUrlInput, { color: colors.text, backgroundColor: colors.surface }]}
                 value={unblockUrlInput}
                 onChangeText={setUnblockUrlInput}
                 placeholder="https://unblock.example.com"
@@ -282,14 +307,14 @@ export default function SettingsScreen() {
                 autoCorrect={false}
                 keyboardType="url"
               />
-              <TouchableOpacity style={styles.apiUrlSave} onPress={handleUnblockUrlSubmit}>
+              <TouchableOpacity style={[styles.apiUrlSave, { backgroundColor: colors.primary }]} onPress={handleUnblockUrlSubmit}>
                 <Text style={styles.apiUrlSaveText}>保存</Text>
               </TouchableOpacity>
             </View>
           </View>
           <TouchableOpacity style={styles.optionRow} onPress={handleClearCache}>
-            <Text style={styles.optionLabel}>清除解析缓存</Text>
-            <Text style={styles.dangerText}>清除</Text>
+            <Text style={[styles.optionLabel, { color: colors.text }]}>清除解析缓存</Text>
+            <Text style={[styles.dangerText, { color: colors.error }]}>清除</Text>
           </TouchableOpacity>
         </>
       )}
@@ -299,19 +324,22 @@ export default function SettingsScreen() {
   const renderAbout = () => (
     <View style={styles.optionColumn}>
       <View style={styles.optionRow}>
-        <Text style={styles.optionLabel}>版本</Text>
-        <Text style={styles.optionValue}>{APP_VERSION}</Text>
+        <Text style={[styles.optionLabel, { color: colors.text }]}>版本</Text>
+        <Text style={[styles.optionValue, { color: colors.textSecondary }]}>{APP_VERSION}</Text>
       </View>
       <TouchableOpacity style={styles.optionRow} onPress={handleOpenGithub}>
-        <Text style={styles.optionLabel}>GitHub</Text>
-        <Text style={styles.githubLink}>algerkong/AlgerMusicPlayer</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <MaterialCommunityIcons name="github" size={18} color={colors.textSecondary} style={{ marginRight: 8 }} />
+          <Text style={[styles.optionLabel, { color: colors.text }]}>GitHub</Text>
+        </View>
+        <Text style={[styles.githubLink, { color: colors.primary }]}>algerkong/AlgerMusicPlayer</Text>
       </TouchableOpacity>
     </View>
   );
 
   return (
     <ScrollView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.background }]}
       contentContainerStyle={{ paddingTop: insets.top, paddingBottom: 100 }}
       showsVerticalScrollIndicator={false}
     >
@@ -331,21 +359,24 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   section: {
     paddingHorizontal: Spacing.lg,
     marginTop: Spacing.xl,
   },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+    marginLeft: 4,
+  },
   sectionTitle: {
     ...Typography.caption,
-    color: colors.textSecondary,
     fontWeight: '600',
     textTransform: 'uppercase',
-    marginBottom: Spacing.sm,
+    marginLeft: 6,
   },
   sectionContent: {
-    backgroundColor: colors.card,
     borderRadius: BorderRadius.lg,
     overflow: 'hidden',
   },
@@ -364,30 +395,25 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   },
   optionLabel: {
     ...Typography.body2,
-    color: colors.text,
   },
   optionHint: {
     ...Typography.caption,
-    color: colors.textTertiary,
     marginTop: 2,
   },
   optionValue: {
     ...Typography.body2,
-    color: colors.textSecondary,
   },
   selectorContainer: {
     flexDirection: 'row',
-    backgroundColor: colors.surface,
     borderRadius: BorderRadius.md,
     padding: 2,
   },
   selectorOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.sm,
-  },
-  selectorOptionActive: {
-    backgroundColor: colors.primary,
   },
   selectorText: {
     ...Typography.caption,
@@ -405,15 +431,12 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   apiUrlInput: {
     flex: 1,
     ...Typography.caption,
-    color: colors.text,
-    backgroundColor: colors.surface,
     borderRadius: BorderRadius.md,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     marginRight: Spacing.sm,
   },
   apiUrlSave: {
-    backgroundColor: colors.primary,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.md,
@@ -425,16 +448,13 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   },
   resetText: {
     ...Typography.overline,
-    color: colors.primary,
     marginTop: Spacing.xs,
   },
   dangerText: {
     ...Typography.caption,
-    color: colors.error,
   },
   githubLink: {
     ...Typography.caption,
-    color: colors.primary,
   },
   });
 }

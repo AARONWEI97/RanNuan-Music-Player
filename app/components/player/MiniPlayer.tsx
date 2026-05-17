@@ -1,11 +1,12 @@
 import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppTheme } from '../../theme/ThemeContext';
 import { Spacing, BorderRadius } from '../../theme/spacing';
 import { Typography } from '../../theme/typography';
 import { usePlayerStore } from '../../store/playerStore';
 import { usePlaylistStore } from '../../store/playlistStore';
-import * as trackPlayerService from '../../services/trackPlayerService';
+import { usePlayer } from '../../hooks/usePlayer';
 import NetworkImage from '../common/NetworkImage';
 import PlayModeToggle from './PlayModeToggle';
 
@@ -20,27 +21,14 @@ export default function MiniPlayer({ onPress }: MiniPlayerProps) {
   const isPlay = usePlayerStore((s) => s.isPlay);
   const currentProgress = usePlayerStore((s) => s.currentProgress);
   const duration = usePlayerStore((s) => s.duration);
-  const setIsPlay = usePlayerStore((s) => s.setIsPlay);
   const setShowPlaylistDrawer = usePlaylistStore((s) => s.setShowPlaylistDrawer);
+  const { togglePlayback, next } = usePlayer();
 
   if (!playMusic) return null;
 
   const artistName = playMusic.ar?.map((a) => a.name).join(' / ') || '未知歌手';
   const coverUrl = playMusic.picUrl || playMusic.al?.picUrl;
   const progressPercent = duration > 0 ? currentProgress / duration : 0;
-
-  const handlePlayPause = async () => {
-    try {
-      await trackPlayerService.togglePlayback();
-      setIsPlay(!isPlay);
-    } catch {}
-  };
-
-  const handleNext = async () => {
-    try {
-      await trackPlayerService.skipToNext();
-    } catch {}
-  };
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={styles.container}>
@@ -60,16 +48,16 @@ export default function MiniPlayer({ onPress }: MiniPlayerProps) {
 
         <PlayModeToggle size="small" />
 
-        <TouchableOpacity onPress={handlePlayPause} style={styles.controlButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Text style={styles.controlIcon}>{isPlay ? '⏸' : '▶'}</Text>
+        <TouchableOpacity onPress={togglePlayback} style={styles.controlButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <MaterialCommunityIcons name={isPlay ? 'pause' : 'play'} size={26} color={colors.text} />
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={handleNext} style={styles.controlButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Text style={styles.controlIcon}>⏭</Text>
+        <TouchableOpacity onPress={next} style={styles.controlButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <MaterialCommunityIcons name="skip-next" size={26} color={colors.text} />
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => setShowPlaylistDrawer(true)} style={styles.controlButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Text style={styles.controlIcon}>☰</Text>
+          <MaterialCommunityIcons name="playlist-music" size={24} color={colors.text} />
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
@@ -116,10 +104,6 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   },
   controlButton: {
     padding: Spacing.xs,
-  },
-  controlIcon: {
-    fontSize: 20,
-    color: colors.text,
   },
   });
 }

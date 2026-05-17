@@ -10,20 +10,33 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { usePlaylistStore } from '../../store/playlistStore';
 import { usePlayerStore } from '../../store/playerStore';
-import NetworkImage from '../common/NetworkImage';
 import { useAppTheme } from '../../theme/ThemeContext';
 import { Spacing, BorderRadius } from '../../theme/spacing';
 import { Typography } from '../../theme/typography';
+import { PLAY_MODE_SEQUENTIAL, PLAY_MODE_LOOP, PLAY_MODE_SHUFFLE, PLAY_MODE_INTELLIGENCE } from '../../constants/config';
+import { usePlayer } from '../../hooks/usePlayer';
 import type { SongResult } from '../../types';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const DRAWER_HEIGHT = SCREEN_HEIGHT * 0.55;
 
-const PLAY_MODE_ICONS = ['🔁', '🔂', '🔀', '💝'];
-const PLAY_MODE_LABELS = ['顺序播放', '单曲循环', '随机播放', '心动模式'];
+const PLAY_MODE_ICONS: Record<number, React.ComponentProps<typeof MaterialCommunityIcons>['name']> = {
+  [PLAY_MODE_SEQUENTIAL]: 'repeat',
+  [PLAY_MODE_LOOP]: 'repeat-once',
+  [PLAY_MODE_SHUFFLE]: 'shuffle',
+  [PLAY_MODE_INTELLIGENCE]: 'head-heart',
+};
+
+const PLAY_MODE_LABELS: Record<number, string> = {
+  [PLAY_MODE_SEQUENTIAL]: '顺序播放',
+  [PLAY_MODE_LOOP]: '单曲循环',
+  [PLAY_MODE_SHUFFLE]: '随机播放',
+  [PLAY_MODE_INTELLIGENCE]: '心动模式',
+};
 
 export default function PlaylistDrawer() {
   const { colors } = useAppTheme();
@@ -39,21 +52,27 @@ export default function PlaylistDrawer() {
   const clearPlayAll = usePlaylistStore((s) => s.clearPlayAll);
   const setPlayListIndex = usePlaylistStore((s) => s.setPlayListIndex);
   const playMusic = usePlayerStore((s) => s.playMusic);
-  const setIsPlay = usePlayerStore((s) => s.setIsPlay);
-  const setPlayMusic = usePlayerStore((s) => s.setPlayMusic);
+  const { playSong } = usePlayer();
 
+  // 修复：歌曲点击时真正播放音频（之前只更新 store 不播放）
   const handleSongPress = useCallback(
     (song: SongResult, index: number) => {
       setPlayListIndex(index);
-      setPlayMusic(song);
-      setIsPlay(true);
+      playSong(song);
     },
-    [setPlayListIndex, setPlayMusic, setIsPlay]
+    [setPlayListIndex, playSong]
   );
 
   const handleClose = useCallback(() => {
     setShowPlaylistDrawer(false);
   }, [setShowPlaylistDrawer]);
+
+  // 修复：initialScrollIndex 越界导致闪退
+  const safeInitialIndex = useMemo(() => {
+    if (playList.length === 0) return 0;
+    const clampedIndex = Math.min(playListIndex, playList.length - 1);
+    return clampedIndex > 3 ? clampedIndex - 2 : 0;
+  }, [playListIndex, playList.length]);
 
   const renderItem = useCallback(
     ({ item, index }: { item: SongResult; index: number }) => {
@@ -79,12 +98,12 @@ export default function PlaylistDrawer() {
             onPress={() => removeFromPlayList(item.id)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Text style={styles.removeIcon}>✕</Text>
+            <MaterialCommunityIcons name="close" size={18} color={colors.textTertiary} />
           </TouchableOpacity>
         </TouchableOpacity>
       );
     },
-    [playMusic, handleSongPress, removeFromPlayList]
+    [playMusic, handleSongPress, removeFromPlayList, colors]
   );
 
   return (
@@ -102,16 +121,21 @@ export default function PlaylistDrawer() {
 
               <View style={styles.header}>
                 <View style={styles.headerLeft}>
+                  <MaterialCommunityIcons name="playlist-music" size={20} color={colors.text} />
                   <Text style={styles.headerTitle}>播放列表</Text>
                   <Text style={styles.headerCount}>{playList.length}首</Text>
                 </View>
                 <View style={styles.headerRight}>
                   <TouchableOpacity style={styles.modeButton} onPress={togglePlayMode}>
-                    <Text style={styles.modeIcon}>{PLAY_MODE_ICONS[playMode]}</Text>
+                    <MaterialCommunityIcons
+                      name={PLAY_MODE_ICONS[playMode] || 'repeat'}
+                      size={18}
+                      color={colors.primary}
+                    />
                     <Text style={styles.modeLabel}>{PLAY_MODE_LABELS[playMode]}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.clearButton} onPress={clearPlayAll}>
-                    <Text style={styles.clearIcon}>🗑</Text>
+                    <MaterialCommunityIcons name="delete-outline" size={18} color={colors.textSecondary} />
                     <Text style={styles.clearLabel}>清空</Text>
                   </TouchableOpacity>
                 </View>
@@ -123,7 +147,7 @@ export default function PlaylistDrawer() {
                 keyExtractor={(item, index) => `${item.id}-${index}`}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.listContent}
-                initialScrollIndex={playListIndex > 3 ? playListIndex - 2 : 0}
+                initialScrollIndex={safeInitialIndex}
                 getItemLayout={(_, index) => ({
                   length: 56,
                   offset: 56 * index,
@@ -140,115 +164,106 @@ export default function PlaylistDrawer() {
 
 function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   return StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  drawer: {
-    backgroundColor: colors.background,
-    borderTopLeftRadius: BorderRadius.xxl,
-    borderTopRightRadius: BorderRadius.xxl,
-    maxHeight: DRAWER_HEIGHT,
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.divider,
-    alignSelf: 'center',
-    marginTop: Spacing.md,
-    marginBottom: Spacing.sm,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.divider,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-  },
-  headerTitle: {
-    ...Typography.h4,
-    color: colors.text,
-    fontWeight: '600',
-  },
-  headerCount: {
-    ...Typography.caption,
-    color: colors.textTertiary,
-    marginLeft: Spacing.sm,
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  modeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: Spacing.lg,
-  },
-  modeIcon: {
-    fontSize: 16,
-    marginRight: Spacing.xs,
-  },
-  modeLabel: {
-    ...Typography.caption,
-    color: colors.textSecondary,
-  },
-  clearButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  clearIcon: {
-    fontSize: 14,
-    marginRight: Spacing.xs,
-  },
-  clearLabel: {
-    ...Typography.caption,
-    color: colors.textSecondary,
-  },
-  listContent: {
-    paddingBottom: Spacing.lg,
-  },
-  songItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    height: 56,
-  },
-  songItemActive: {
-    backgroundColor: `${colors.primary}10`,
-  },
-  songInfo: {
-    flex: 1,
-    marginRight: Spacing.md,
-  },
-  songName: {
-    ...Typography.body2,
-    color: colors.text,
-    fontWeight: '400',
-    marginBottom: 2,
-  },
-  songNameActive: {
-    color: colors.primary,
-    fontWeight: '600',
-  },
-  songArtist: {
-    ...Typography.overline,
-    color: colors.textTertiary,
-  },
-  removeButton: {
-    padding: Spacing.xs,
-  },
-  removeIcon: {
-    fontSize: 14,
-    color: colors.textTertiary,
-  },
+    overlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      justifyContent: 'flex-end',
+    },
+    drawer: {
+      backgroundColor: colors.background,
+      borderTopLeftRadius: BorderRadius.xxl,
+      borderTopRightRadius: BorderRadius.xxl,
+      maxHeight: DRAWER_HEIGHT,
+    },
+    handle: {
+      width: 36,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: colors.divider,
+      alignSelf: 'center',
+      marginTop: Spacing.md,
+      marginBottom: Spacing.sm,
+    },
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.divider,
+    },
+    headerLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    headerTitle: {
+      ...Typography.h4,
+      color: colors.text,
+      fontWeight: '600',
+      marginLeft: Spacing.xs,
+    },
+    headerCount: {
+      ...Typography.caption,
+      color: colors.textTertiary,
+      marginLeft: Spacing.sm,
+    },
+    headerRight: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    modeButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginRight: Spacing.lg,
+    },
+    modeLabel: {
+      ...Typography.caption,
+      color: colors.textSecondary,
+      marginLeft: 4,
+    },
+    clearButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    clearLabel: {
+      ...Typography.caption,
+      color: colors.textSecondary,
+      marginLeft: 4,
+    },
+    listContent: {
+      paddingBottom: Spacing.lg,
+    },
+    songItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.md,
+      height: 56,
+    },
+    songItemActive: {
+      backgroundColor: `${colors.primary}10`,
+    },
+    songInfo: {
+      flex: 1,
+      marginRight: Spacing.md,
+    },
+    songName: {
+      ...Typography.body2,
+      color: colors.text,
+      fontWeight: '400',
+      marginBottom: 2,
+    },
+    songNameActive: {
+      color: colors.primary,
+      fontWeight: '600',
+    },
+    songArtist: {
+      ...Typography.overline,
+      color: colors.textTertiary,
+    },
+    removeButton: {
+      padding: Spacing.xs,
+    },
   });
 }

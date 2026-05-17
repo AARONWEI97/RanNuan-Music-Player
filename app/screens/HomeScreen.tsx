@@ -13,10 +13,14 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { usePlayer } from '../hooks/usePlayer';
 import { usePlaylist } from '../hooks/usePlaylist';
 import { useAppTheme } from '../theme/ThemeContext';
+import { Spacing, BorderRadius } from '../theme/spacing';
+import { Typography } from '../theme/typography';
 import { getBanners, getPersonalizedPlaylist, getRecommendMusic, getHotSinger, getNewAlbum } from '../api/home';
 import type { SongResult, RootStackScreenProps } from '../types';
 
@@ -58,6 +62,15 @@ function formatPlayCount(count: number): string {
   if (count >= 100000000) return `${(count / 100000000).toFixed(1)}亿`;
   if (count >= 10000) return `${(count / 10000).toFixed(1)}万`;
   return String(count);
+}
+
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 6) return '夜深了';
+  if (hour < 12) return '早上好';
+  if (hour < 14) return '中午好';
+  if (hour < 18) return '下午好';
+  return '晚上好';
 }
 
 export default function HomeScreen() {
@@ -161,7 +174,6 @@ export default function HomeScreen() {
         }
       }
 
-      // 全部 API 请求都失败时显示错误状态
       if (!anySuccess) {
         setError(true);
       }
@@ -207,7 +219,8 @@ export default function HomeScreen() {
   if (error) {
     return (
       <View style={[styles.container, styles.centerContent]}>
-        <Text style={styles.errorText}>加载失败</Text>
+        <MaterialCommunityIcons name="alert-circle-outline" size={48} color={colors.textSecondary} />
+        <Text style={[styles.errorText, { color: colors.textSecondary }]}>加载失败</Text>
         <TouchableOpacity style={styles.retryButton} onPress={fetchData}>
           <Text style={styles.retryText}>重试</Text>
         </TouchableOpacity>
@@ -222,11 +235,19 @@ export default function HomeScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
       showsVerticalScrollIndicator={false}
     >
-      <Pressable style={styles.searchBar} onPress={() => navigation.navigate('Search')}>
-        <Text style={styles.searchIcon}>🔍</Text>
-        <Text style={styles.searchPlaceholder}>搜索音乐、歌手、歌词</Text>
+      {/* Hero greeting area */}
+      <View style={styles.heroSection}>
+        <Text style={[styles.greeting, { color: colors.text }]}>{getGreeting()}</Text>
+        <Text style={[styles.greetingSub, { color: colors.textSecondary }]}>发现你喜欢的音乐</Text>
+      </View>
+
+      {/* Search bar */}
+      <Pressable style={[styles.searchBar, { backgroundColor: colors.surface }]} onPress={() => navigation.navigate('Search')}>
+        <MaterialCommunityIcons name="magnify" size={20} color={colors.textSecondary} />
+        <Text style={[styles.searchPlaceholder, { color: colors.textSecondary }]}>搜索音乐、歌手、歌词</Text>
       </Pressable>
 
+      {/* Banners */}
       {banners.length > 0 && (
         <View style={styles.bannerSection}>
           <ScrollView
@@ -249,17 +270,23 @@ export default function HomeScreen() {
             {banners.map((_, index) => (
               <View
                 key={index}
-                style={[styles.dot, activeBannerIndex === index && styles.activeDot]}
+                style={[
+                  styles.dot,
+                  { backgroundColor: activeBannerIndex === index ? colors.primary : colors.divider },
+                  activeBannerIndex === index && styles.activeDot,
+                ]}
               />
             ))}
           </View>
         </View>
       )}
 
+      {/* Recommended playlists */}
       {playlists.length > 0 && (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>推荐歌单</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>推荐歌单</Text>
+            <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textSecondary} />
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
             {playlists.map((item) => (
@@ -268,42 +295,52 @@ export default function HomeScreen() {
                 style={styles.playlistCard}
                 onPress={() => navigation.navigate('PlaylistDetail', { id: item.id })}
               >
-                <Image source={{ uri: item.picUrl }} style={styles.playlistCover} />
-                <Text style={styles.playlistName} numberOfLines={2}>{item.name}</Text>
-                <Text style={styles.playCount}>{formatPlayCount(item.playCount)}</Text>
+                <View style={styles.playlistCoverWrapper}>
+                  <Image source={{ uri: item.picUrl }} style={styles.playlistCover} />
+                  <View style={styles.playCountBadge}>
+                    <MaterialCommunityIcons name="play" size={10} color="#ffffff" />
+                    <Text style={styles.playCountText}>{formatPlayCount(item.playCount)}</Text>
+                  </View>
+                </View>
+                <Text style={[styles.playlistName, { color: colors.text }]} numberOfLines={2}>{item.name}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
         </View>
       )}
 
+      {/* Recommended songs */}
       {recommendSongs.length > 0 && (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>推荐音乐</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>推荐音乐</Text>
+            <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textSecondary} />
           </View>
           {recommendSongs.slice(0, 6).map((song, index) => (
             <TouchableOpacity
               key={String(song.id)}
-              style={styles.songItem}
+              style={[styles.songItem, { borderBottomColor: colors.divider }]}
               onPress={() => handlePlaySong(song, index)}
             >
               <Image source={{ uri: song.picUrl || song.al?.picUrl }} style={styles.songCover} />
               <View style={styles.songInfo}>
-                <Text style={styles.songName} numberOfLines={1}>{song.name}</Text>
-                <Text style={styles.songArtist} numberOfLines={1}>
+                <Text style={[styles.songName, { color: colors.text }]} numberOfLines={1}>{song.name}</Text>
+                <Text style={[styles.songArtist, { color: colors.textSecondary }]} numberOfLines={1}>
                   {song.ar?.map((a) => a.name).join(' / ') || '未知歌手'}
                 </Text>
               </View>
+              <MaterialCommunityIcons name="play-circle-outline" size={28} color={colors.textTertiary} />
             </TouchableOpacity>
           ))}
         </View>
       )}
 
+      {/* Hot singers */}
       {hotSingers.length > 0 && (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>热门歌手</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>热门歌手</Text>
+            <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textSecondary} />
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
             {hotSingers.map((artist) => (
@@ -313,17 +350,19 @@ export default function HomeScreen() {
                 onPress={() => navigation.navigate('ArtistDetail', { id: artist.id })}
               >
                 <Image source={{ uri: artist.picUrl }} style={styles.artistAvatar} />
-                <Text style={styles.artistName} numberOfLines={1}>{artist.name}</Text>
+                <Text style={[styles.artistName, { color: colors.text }]} numberOfLines={1}>{artist.name}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
         </View>
       )}
 
+      {/* New albums */}
       {newAlbums.length > 0 && (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>新碟上架</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>新碟上架</Text>
+            <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textSecondary} />
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
             {newAlbums.map((album) => (
@@ -333,8 +372,8 @@ export default function HomeScreen() {
                 onPress={() => navigation.navigate('AlbumDetail', { id: album.id })}
               >
                 <Image source={{ uri: album.picUrl }} style={styles.albumCover} />
-                <Text style={styles.albumName} numberOfLines={2}>{album.name}</Text>
-                <Text style={styles.albumArtist} numberOfLines={1}>{album.artist.name}</Text>
+                <Text style={[styles.albumName, { color: colors.text }]} numberOfLines={2}>{album.name}</Text>
+                <Text style={[styles.albumArtist, { color: colors.textSecondary }]} numberOfLines={1}>{album.artist.name}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -354,27 +393,34 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     justifyContent: 'center',
     alignItems: 'center',
   },
+  heroSection: {
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.md,
+  },
+  greeting: {
+    ...Typography.h2,
+    fontWeight: '700',
+  },
+  greetingSub: {
+    ...Typography.body2,
+    marginTop: 4,
+  },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 12,
-    paddingHorizontal: 12,
-    height: 40,
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-  },
-  searchIcon: {
-    fontSize: 16,
-    marginRight: 8,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    height: 44,
+    borderRadius: BorderRadius.xxl,
   },
   searchPlaceholder: {
-    fontSize: 14,
-    color: colors.textSecondary,
+    ...Typography.body2,
+    marginLeft: Spacing.sm,
   },
   bannerSection: {
-    marginBottom: 16,
+    marginBottom: Spacing.md,
   },
   bannerImage: {
     width: SCREEN_WIDTH,
@@ -384,84 +430,93 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: Spacing.sm,
   },
   dot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: colors.divider,
     marginHorizontal: 3,
   },
   activeDot: {
-    backgroundColor: colors.primary,
     width: 16,
   },
   section: {
-    marginBottom: 20,
+    marginBottom: Spacing.xl,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    marginBottom: 12,
+    paddingHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   sectionTitle: {
-    fontSize: 18,
+    ...Typography.h4,
     fontWeight: '700',
-    color: colors.text,
   },
   horizontalScroll: {
-    paddingHorizontal: 12,
+    paddingHorizontal: Spacing.md,
   },
   playlistCard: {
     width: CARD_WIDTH + 8,
     marginHorizontal: 4,
   },
+  playlistCoverWrapper: {
+    position: 'relative',
+  },
   playlistCover: {
     width: CARD_WIDTH + 8,
     height: CARD_WIDTH + 8,
-    borderRadius: 8,
+    borderRadius: BorderRadius.md,
     backgroundColor: colors.surfaceVariant,
+  },
+  playCountBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: BorderRadius.xxl,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  playCountText: {
+    color: '#ffffff',
+    fontSize: 10,
+    marginLeft: 2,
   },
   playlistName: {
     fontSize: 12,
-    color: colors.text,
-    marginTop: 6,
+    marginTop: Spacing.xs,
     lineHeight: 16,
-  },
-  playCount: {
-    fontSize: 10,
-    color: colors.textSecondary,
-    marginTop: 2,
   },
   songItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   songCover: {
     width: 48,
     height: 48,
-    borderRadius: 6,
+    borderRadius: BorderRadius.sm,
     backgroundColor: colors.surfaceVariant,
   },
   songInfo: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: Spacing.md,
     justifyContent: 'center',
   },
   songName: {
-    fontSize: 15,
-    color: colors.text,
+    ...Typography.body2,
     fontWeight: '500',
   },
   songArtist: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 3,
+    ...Typography.caption,
+    marginTop: 2,
   },
   artistCard: {
     width: 80,
@@ -475,9 +530,8 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     backgroundColor: colors.surfaceVariant,
   },
   artistName: {
-    fontSize: 12,
-    color: colors.text,
-    marginTop: 6,
+    ...Typography.caption,
+    marginTop: Spacing.xs,
     textAlign: 'center',
   },
   albumCard: {
@@ -487,34 +541,32 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   albumCover: {
     width: CARD_WIDTH + 8,
     height: CARD_WIDTH + 8,
-    borderRadius: 8,
+    borderRadius: BorderRadius.md,
     backgroundColor: colors.surfaceVariant,
   },
   albumName: {
-    fontSize: 12,
-    color: colors.text,
-    marginTop: 6,
+    ...Typography.caption,
+    marginTop: Spacing.xs,
     lineHeight: 16,
   },
   albumArtist: {
-    fontSize: 10,
-    color: colors.textSecondary,
+    ...Typography.overline,
     marginTop: 2,
   },
   errorText: {
-    fontSize: 16,
-    color: colors.textSecondary,
-    marginBottom: 16,
+    ...Typography.body1,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.lg,
   },
   retryButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 10,
+    paddingHorizontal: Spacing.xxl,
+    paddingVertical: Spacing.md,
     backgroundColor: colors.primary,
-    borderRadius: 20,
+    borderRadius: BorderRadius.xxl,
   },
   retryText: {
+    ...Typography.body2,
     color: '#ffffff',
-    fontSize: 14,
     fontWeight: '600',
   },
   });

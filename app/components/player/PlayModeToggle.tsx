@@ -1,13 +1,26 @@
 import React from 'react';
 import { TouchableOpacity, StyleSheet, Text, View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { usePlaylistStore } from '../../store/playlistStore';
-import { LightColors } from '../../theme/colors';
+import { useAppTheme } from '../../theme/ThemeContext';
 import { Spacing, BorderRadius } from '../../theme/spacing';
 import { Typography } from '../../theme/typography';
+import { PLAY_MODE_SEQUENTIAL, PLAY_MODE_LOOP, PLAY_MODE_SHUFFLE, PLAY_MODE_INTELLIGENCE } from '../../constants/config';
 
-const PLAY_MODE_ICONS = ['🔁', '🔂', '🔀', '💝'];
-const PLAY_MODE_LABELS = ['顺序', '单曲', '随机', '心动'];
+const PLAY_MODE_ICONS: Record<number, React.ComponentProps<typeof MaterialCommunityIcons>['name']> = {
+  [PLAY_MODE_SEQUENTIAL]: 'repeat',
+  [PLAY_MODE_LOOP]: 'repeat-once',
+  [PLAY_MODE_SHUFFLE]: 'shuffle',
+  [PLAY_MODE_INTELLIGENCE]: 'head-heart',
+};
+
+const PLAY_MODE_LABELS: Record<number, string> = {
+  [PLAY_MODE_SEQUENTIAL]: '顺序',
+  [PLAY_MODE_LOOP]: '单曲',
+  [PLAY_MODE_SHUFFLE]: '随机',
+  [PLAY_MODE_INTELLIGENCE]: '心动',
+};
 
 interface PlayModeToggleProps {
   size?: 'small' | 'normal';
@@ -15,10 +28,11 @@ interface PlayModeToggleProps {
 }
 
 export default function PlayModeToggle({ size = 'normal', showLabel = false }: PlayModeToggleProps) {
+  const { colors } = useAppTheme();
   const playMode = usePlaylistStore((s) => s.playMode);
   const togglePlayMode = usePlaylistStore((s) => s.togglePlayMode);
 
-  const iconSize = size === 'small' ? 18 : 22;
+  const iconSize = size === 'small' ? 18 : 24;
 
   return (
     <TouchableOpacity
@@ -27,9 +41,15 @@ export default function PlayModeToggle({ size = 'normal', showLabel = false }: P
       activeOpacity={0.7}
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
     >
-      <Text style={[styles.icon, { fontSize: iconSize }]}>{PLAY_MODE_ICONS[playMode]}</Text>
+      <MaterialCommunityIcons
+        name={PLAY_MODE_ICONS[playMode] || 'repeat'}
+        size={iconSize}
+        color={colors.textSecondary}
+      />
       {showLabel && (
-        <Text style={styles.label}>{PLAY_MODE_LABELS[playMode]}</Text>
+        <Text style={[styles.label, { color: colors.textTertiary }]}>
+          {PLAY_MODE_LABELS[playMode]}
+        </Text>
       )}
     </TouchableOpacity>
   );
@@ -40,10 +60,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  icon: {},
   label: {
     ...Typography.overline,
-    color: LightColors.textTertiary,
     marginTop: 2,
   },
 });

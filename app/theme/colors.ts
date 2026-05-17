@@ -20,6 +20,10 @@ export const LightColors = {
   tabBarBg: '#ffffff',
   tabBarInactive: '#999999',
   tabBarActive: '#ff3b3b',
+  playerBg: '#1a1a2e',
+  playerSurface: '#252540',
+  playerText: '#ffffff',
+  playerTextSecondary: '#aaaacc',
 };
 
 export const DarkColors = {
@@ -44,4 +48,8 @@ export const DarkColors = {
   tabBarBg: '#1e1e1e',
   tabBarInactive: '#888888',
   tabBarActive: '#ff3b3b',
+  playerBg: '#0d0d1a',
+  playerSurface: '#1a1a30',
+  playerText: '#ffffff',
+  playerTextSecondary: '#8888aa',
 };

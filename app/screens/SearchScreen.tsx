@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { useSearch } from '../hooks/useSearch';
 import { usePlayer } from '../hooks/usePlayer';
@@ -57,10 +58,10 @@ interface PlaylistResult {
 }
 
 const SEARCH_TABS = [
-  { key: SEARCH_TYPE_SONG, label: '单曲' },
-  { key: SEARCH_TYPE_ARTIST, label: '歌手' },
-  { key: SEARCH_TYPE_ALBUM, label: '专辑' },
-  { key: SEARCH_TYPE_PLAYLIST, label: '歌单' },
+  { key: SEARCH_TYPE_SONG, label: '单曲', icon: 'music-note' as const },
+  { key: SEARCH_TYPE_ARTIST, label: '歌手', icon: 'account-music' as const },
+  { key: SEARCH_TYPE_ALBUM, label: '专辑', icon: 'disc' as const },
+  { key: SEARCH_TYPE_PLAYLIST, label: '歌单', icon: 'playlist-music' as const },
 ];
 
 export default function SearchScreen() {
@@ -217,11 +218,11 @@ export default function SearchScreen() {
 
   const renderSearchBar = () => (
     <View style={[styles.searchBar, { marginTop: insets.top }]}>
-      <View style={styles.searchInputContainer}>
-        <Text style={styles.searchIcon}>🔍</Text>
+      <View style={[styles.searchInputContainer, { backgroundColor: colors.surface }]}>
+        <MaterialCommunityIcons name="magnify" size={20} color={colors.textSecondary} />
         <TextInput
           ref={inputRef}
-          style={styles.searchInput}
+          style={[styles.searchInput, { color: colors.text }]}
           placeholder="搜索音乐、歌手、歌词"
           placeholderTextColor={colors.textSecondary}
           value={keyword}
@@ -231,13 +232,13 @@ export default function SearchScreen() {
         />
         {keyword.length > 0 && (
           <TouchableOpacity onPress={handleClearInput} style={styles.clearButton}>
-            <Text style={styles.clearIcon}>✕</Text>
+            <MaterialCommunityIcons name="close-circle" size={18} color={colors.textTertiary} />
           </TouchableOpacity>
         )}
       </View>
       {isSearching && (
         <TouchableOpacity onPress={() => { setKeyword(''); setIsSearching(false); }} style={styles.cancelButton}>
-          <Text style={styles.cancelText}>取消</Text>
+          <Text style={[styles.cancelText, { color: colors.primary }]}>取消</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -245,16 +246,19 @@ export default function SearchScreen() {
 
   const renderHotSearch = () => (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>热搜</Text>
+      <View style={styles.sectionHeader}>
+        <MaterialCommunityIcons name="fire" size={18} color={colors.primary} />
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>热搜</Text>
+      </View>
       <View style={styles.tagContainer}>
         {hotSearch.map((item, index) => (
           <TouchableOpacity
             key={index}
-            style={styles.tag}
+            style={[styles.tag, { backgroundColor: colors.surface }]}
             onPress={() => handleKeywordPress(item.searchWord)}
           >
-            <Text style={styles.tagIndex}>{index + 1}</Text>
-            <Text style={styles.tagText}>{item.searchWord}</Text>
+            <Text style={[styles.tagIndex, { color: index < 3 ? colors.primary : colors.textTertiary }]}>{index + 1}</Text>
+            <Text style={[styles.tagText, { color: colors.text }]}>{item.searchWord}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -266,19 +270,22 @@ export default function SearchScreen() {
     return (
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>搜索历史</Text>
+          <View style={styles.sectionHeaderLeft}>
+            <MaterialCommunityIcons name="history" size={18} color={colors.textSecondary} />
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>搜索历史</Text>
+          </View>
           <TouchableOpacity onPress={clearHistory}>
-            <Text style={styles.clearHistoryText}>清空</Text>
+            <MaterialCommunityIcons name="delete-outline" size={18} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
         <View style={styles.tagContainer}>
           {searchHistory.map((item, index) => (
             <TouchableOpacity
               key={index}
-              style={styles.historyTag}
+              style={[styles.historyTag, { backgroundColor: colors.surface }]}
               onPress={() => handleKeywordPress(item)}
             >
-              <Text style={styles.historyTagText}>{item}</Text>
+              <Text style={[styles.historyTagText, { color: colors.textSecondary }]}>{item}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -287,13 +294,22 @@ export default function SearchScreen() {
   };
 
   const renderTabBar = () => (
-    <View style={styles.tabBar}>
+    <View style={[styles.tabBar, { backgroundColor: colors.surface }]}>
       {SEARCH_TABS.map((tab) => (
         <TouchableOpacity
           key={tab.key}
-          style={[styles.tab, activeTab === tab.key && styles.activeTab]}
+          style={[
+            styles.tab,
+            activeTab === tab.key && { backgroundColor: colors.primary },
+          ]}
           onPress={() => handleTabPress(tab.key)}
         >
+          <MaterialCommunityIcons
+            name={tab.icon}
+            size={14}
+            color={activeTab === tab.key ? '#ffffff' : colors.textSecondary}
+            style={{ marginRight: 4 }}
+          />
           <Text style={[styles.tabText, activeTab === tab.key && styles.activeTabText]}>
             {tab.label}
           </Text>
@@ -308,8 +324,8 @@ export default function SearchScreen() {
       onPress={() => navigation.navigate('ArtistDetail', { id: item.id })}
     >
       <NetworkImage uri={item.picUrl || item.img1v1Url} style={styles.artistAvatar} />
-      <Text style={styles.artistName} numberOfLines={1}>{item.name}</Text>
-      <Text style={styles.artistAlbumCount}>{item.albumSize}张专辑</Text>
+      <Text style={[styles.artistName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+      <Text style={[styles.artistAlbumCount, { color: colors.textTertiary }]}>{item.albumSize}张专辑</Text>
     </TouchableOpacity>
   );
 
@@ -319,8 +335,8 @@ export default function SearchScreen() {
       onPress={() => navigation.navigate('AlbumDetail', { id: item.id })}
     >
       <NetworkImage uri={item.picUrl} style={styles.albumCover} />
-      <Text style={styles.albumName} numberOfLines={2}>{item.name}</Text>
-      <Text style={styles.albumArtist} numberOfLines={1}>{item.artist.name}</Text>
+      <Text style={[styles.albumName, { color: colors.text }]} numberOfLines={2}>{item.name}</Text>
+      <Text style={[styles.albumArtist, { color: colors.textSecondary }]} numberOfLines={1}>{item.artist.name}</Text>
     </TouchableOpacity>
   );
 
@@ -330,8 +346,8 @@ export default function SearchScreen() {
       onPress={() => navigation.navigate('PlaylistDetail', { id: item.id })}
     >
       <NetworkImage uri={item.coverImgUrl} style={styles.playlistCover} />
-      <Text style={styles.playlistName} numberOfLines={2}>{item.name}</Text>
-      <Text style={styles.playlistMeta}>{item.trackCount}首 · by {item.creator.nickname}</Text>
+      <Text style={[styles.playlistName, { color: colors.text }]} numberOfLines={2}>{item.name}</Text>
+      <Text style={[styles.playlistMeta, { color: colors.textSecondary }]}>{item.trackCount}首 · by {item.creator.nickname}</Text>
     </TouchableOpacity>
   );
 
@@ -355,7 +371,8 @@ export default function SearchScreen() {
             currentSongId={undefined}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>暂无搜索结果</Text>
+                <MaterialCommunityIcons name="music-note-off" size={40} color={colors.textTertiary} />
+                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>暂无搜索结果</Text>
               </View>
             }
           />
@@ -371,7 +388,7 @@ export default function SearchScreen() {
             contentContainerStyle={styles.gridContent}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>暂无搜索结果</Text>
+                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>暂无搜索结果</Text>
               </View>
             }
             showsVerticalScrollIndicator={false}
@@ -388,7 +405,7 @@ export default function SearchScreen() {
             contentContainerStyle={styles.gridContent}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>暂无搜索结果</Text>
+                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>暂无搜索结果</Text>
               </View>
             }
             showsVerticalScrollIndicator={false}
@@ -405,7 +422,7 @@ export default function SearchScreen() {
             contentContainerStyle={styles.gridContent}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>暂无搜索结果</Text>
+                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>暂无搜索结果</Text>
               </View>
             }
             showsVerticalScrollIndicator={false}
@@ -417,7 +434,7 @@ export default function SearchScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {renderSearchBar()}
 
       {isSearching ? (
@@ -445,7 +462,6 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   searchBar: {
     flexDirection: 'row',
@@ -458,34 +474,24 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    height: 40,
-    backgroundColor: colors.surface,
+    height: 44,
     borderRadius: BorderRadius.xxl,
     paddingHorizontal: Spacing.md,
-  },
-  searchIcon: {
-    fontSize: 16,
-    marginRight: Spacing.sm,
   },
   searchInput: {
     flex: 1,
     ...Typography.body2,
-    color: colors.text,
     paddingVertical: 0,
+    marginLeft: Spacing.sm,
   },
   clearButton: {
     padding: Spacing.xs,
-  },
-  clearIcon: {
-    fontSize: 14,
-    color: colors.textSecondary,
   },
   cancelButton: {
     marginLeft: Spacing.md,
   },
   cancelText: {
     ...Typography.body2,
-    color: colors.primary,
   },
   section: {
     paddingHorizontal: Spacing.lg,
@@ -497,11 +503,14 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     alignItems: 'center',
     marginBottom: Spacing.md,
   },
+  sectionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   sectionTitle: {
     ...Typography.h4,
-    color: colors.text,
     fontWeight: '600',
-    marginBottom: Spacing.md,
+    marginLeft: 6,
   },
   tagContainer: {
     flexDirection: 'row',
@@ -510,7 +519,6 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   tag: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
     borderRadius: BorderRadius.xxl,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
@@ -519,17 +527,14 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   },
   tagIndex: {
     ...Typography.caption,
-    color: colors.primary,
     fontWeight: '700',
     marginRight: Spacing.xs,
     minWidth: 16,
   },
   tagText: {
     ...Typography.caption,
-    color: colors.text,
   },
   historyTag: {
-    backgroundColor: colors.surface,
     borderRadius: BorderRadius.xxl,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
@@ -538,11 +543,6 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   },
   historyTagText: {
     ...Typography.caption,
-    color: colors.textSecondary,
-  },
-  clearHistoryText: {
-    ...Typography.caption,
-    color: colors.textSecondary,
   },
   defaultContent: {
     flex: 1,
@@ -552,21 +552,18 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   },
   tabBar: {
     flexDirection: 'row',
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: BorderRadius.xxl,
     marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.sm,
+    borderRadius: BorderRadius.xxl,
     padding: 3,
   },
   tab: {
     flex: 1,
-    paddingVertical: Spacing.sm,
+    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.xxl,
-  },
-  activeTab: {
-    backgroundColor: colors.primary,
   },
   tabText: {
     ...Typography.caption,
@@ -593,7 +590,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   },
   emptyText: {
     ...Typography.body2,
-    color: colors.textSecondary,
+    marginTop: Spacing.sm,
   },
   gridContent: {
     paddingHorizontal: Spacing.md,
@@ -615,13 +612,11 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   },
   artistName: {
     ...Typography.caption,
-    color: colors.text,
     marginTop: Spacing.xs,
     textAlign: 'center',
   },
   artistAlbumCount: {
     ...Typography.overline,
-    color: colors.textTertiary,
     marginTop: 2,
   },
   albumCard: {
@@ -636,13 +631,11 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   },
   albumName: {
     ...Typography.caption,
-    color: colors.text,
     marginTop: Spacing.xs,
     lineHeight: 16,
   },
   albumArtist: {
     ...Typography.overline,
-    color: colors.textSecondary,
     marginTop: 2,
   },
   playlistCard: {
@@ -657,13 +650,11 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   },
   playlistName: {
     ...Typography.caption,
-    color: colors.text,
     marginTop: Spacing.xs,
     lineHeight: 16,
   },
   playlistMeta: {
     ...Typography.overline,
-    color: colors.textSecondary,
     marginTop: 2,
   },
   });

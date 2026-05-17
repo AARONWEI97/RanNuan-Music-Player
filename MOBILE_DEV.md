@@ -1290,3 +1290,331 @@ npx expo start -c
 
 > 约 30% 代码可直接复用，24% 需要适配修改，46% 需要重写（主要是 UI 组件）。
 > 但业务逻辑复用率远高于代码复用率 — Store 的状态设计和 Actions 逻辑 80%+ 可复用，只是从 Pinia 语法转为 Zustand 语法。
+
+---
+
+## 🎨 移动端 UI 改良计划
+
+> 参照桌面端 UI 设计风格，对移动端进行全面视觉升级。
+> 创建时间：2025-05-17
+
+### 当前问题诊断
+
+| 问题 | 严重程度 | 影响范围 |
+|------|---------|---------|
+| 使用 Emoji 作为图标（🏠🔍👤⚙️等） | 🔴 严重 | 全局 - 底部Tab、按钮、导航 |
+| 播放器界面过于简陋，无渐变背景 | 🔴 严重 | PlayerScreen |
+| MiniPlayer 无毛玻璃效果，无精致进度条 | 🟡 中等 | MiniPlayer |
+| 部分页面未使用动态主题色 | 🟡 中等 | PlayerScreen、LoginScreen 等 |
+| 首页缺少 Hero 区域和现代卡片设计 | 🟡 中等 | HomeScreen |
+| 搜索页 Tab 样式原始 | 🟢 轻微 | SearchScreen |
+| 设置页/用户页图标用 Emoji 替代 | 🟡 中等 | SettingsScreen、UserScreen |
+| 详情页头部缺少渐变效果 | 🟡 中等 | PlaylistDetail、ArtistDetail、AlbumDetail |
+| 下载页图标用 Emoji 替代 | 🟢 轻微 | DownloadScreen |
+
+### 改进方案概览
+
+#### 1. 矢量图标替换 (全局)
+
+**问题**：当前所有 Tab 图标和功能按钮使用 Emoji（🏠🔍👤⚙️），在不同设备上显示不一致，无法精确控制颜色和大小。
+
+**方案**：使用 `@expo/vector-icons` 中的 `MaterialCommunityIcons` 替换所有 Emoji。
+
+**映射表**：
+
+| 原 Emoji | 新图标名 | 用途 |
+|----------|---------|------|
+| 🏠 | `home-variant` | 首页 Tab |
+| 🔍 | `magnify` | 搜索 Tab |
+| 👤 | `account-circle` | 我的 Tab |
+| ⚙️ | `cog` | 设置 Tab |
+| 🔀 | `shuffle` | 随机播放 |
+| 🔁 | `repeat` | 列表循环 |
+| 🔂 | `repeat-once` | 单曲循环 |
+| ▶️ | `play` | 播放 |
+| ⏸️ | `pause` | 暂停 |
+| ⏭️ | `skip-forward` | 下一首 |
+| ⏮️ | `skip-previous` | 上一首 |
+| ❤️ | `heart` / `heart-outline` | 喜欢 |
+| 📋 | `playlist-music` | 播放列表 |
+| ⬇️ | `download` / `download-outline` | 下载 |
+| 🎵 | `music-note` | 音乐相关 |
+| 🎤 | `microphone-variant` | 歌手 |
+| 💿 | `disc` | 专辑 |
+| 🗑️ | `delete` | 删除 |
+| ✏️ | `pencil` | 编辑 |
+| 🔙 | `arrow-left` | 返回 |
+| ➕ | `plus` | 新增 |
+| 🔄 | `refresh` | 刷新 |
+| 🔈/🔊 | `volume-low` / `volume-high` | 音量 |
+| 🔎 | `magnify` | 搜索输入 |
+
+#### 2. 主题色增强
+
+**问题**：播放器页面需要独立于亮/暗主题的沉浸式背景色，当前缺少相关色值。
+
+**方案**：在 `colors.ts` 的 `LightColors` 和 `DarkColors` 中新增：
+
+```typescript
+// 新增字段
+playerBg: string;        // 播放器背景（深蓝紫色调，不受亮/暗模式影响）
+playerSurface: string;   // 播放器内卡片/表面色
+playerText: string;      // 播放器文字色
+playerTextSecondary: string; // 播放器次要文字色
+```
+
+亮色模式值：`playerBg: '#1a1a2e'`, `playerSurface: '#252540'`
+暗色模式值：`playerBg: '#0d0d1a'`, `playerSurface: '#1a1a30'`
+
+#### 3. PlayerScreen 重构
+
+**当前状态**：白色/纯色背景，简单布局，无动画效果。
+
+**改进要点**：
+- **沉浸式渐变背景**：使用深蓝紫色调渐变（参考桌面端的深色播放器氛围），基于专辑封面颜色动态取色
+- **专辑封面旋转动画**：播放时封面旋转，暂停时停止（参考桌面端旋转唱片效果）
+- **精致控制栏**：大尺寸圆形播放/暂停按钮，进度条带圆角和渐变
+- **图标全部替换**：播放控制、喜欢、播放列表等图标使用 MaterialCommunityIcons
+- **毛玻璃播放列表面板**：播放列表弹出使用半透明毛玻璃效果
+
+#### 4. MiniPlayer 重构
+
+**当前状态**：简单白色横条，无进度指示。
+
+**改进要点**：
+- **毛玻璃/半透明背景**：使用 `BlurView` 实现类似桌面端的磨砂效果
+- **精致进度条**：底部细线进度条，使用主题色
+- **图标替换**：播放/暂停、喜欢等使用矢量图标
+- **圆角专辑封面**：小尺寸圆角封面图
+
+#### 5. HomeScreen 改良
+
+**当前状态**：简单列表布局，缺少视觉层次。
+
+**改进要点**：
+- **Hero 区域**：顶部问候语 + 个性化推荐卡片，带渐变背景
+- **卡片设计**：推荐歌单使用圆角卡片，带阴影/光晕
+- **图标替换**：刷新按钮等使用矢量图标
+- **分类标签**：使用更现代的胶囊/药丸形标签
+
+#### 6. SearchScreen 改良
+
+**当前状态**：搜索输入框和 Tab 样式原始。
+
+**改进要点**：
+- **药丸形 Tab**：搜索分类（歌曲/歌手/专辑/歌单）使用药丸形切换标签
+- **图标替换**：搜索图标、热门标签图标等
+- **搜索框圆角化**：更现代的搜索输入框样式
+
+#### 7. UserScreen 改良
+
+**当前状态**：简单列表，Emoji 图标。
+
+**改进要点**：
+- **用户信息头部**：头像 + 昵称 + 签名，带渐变背景
+- **功能列表**：使用 MaterialCommunityIcons 图标 + 右侧箭头
+- **主题修复**：确保使用动态主题色
+
+#### 8. SettingsScreen 改良
+
+**当前状态**：Emoji 图标 + 简单列表。
+
+**改进要点**：
+- **图标替换**：所有设置项使用 MaterialCommunityIcons
+- **分组卡片**：设置项按功能分组，带标题和分隔线
+- **Switch 样式**：使用主题色的开关控件
+
+#### 9. 详情页改良 (PlaylistDetail / ArtistDetail / AlbumDetail)
+
+**当前状态**：简单头部信息，无视觉层次。
+
+**改进要点**：
+- **渐变头部**：基于封面颜色生成渐变背景
+- **图标替换**：播放、喜欢、下载等操作按钮
+- **浮动操作按钮**：底部播放全部按钮，带主题色
+
+#### 10. 其他页面改良
+
+- **LoginScreen**：主题色修复，图标替换，更现代的登录界面
+- **DownloadScreen**：图标替换，列表项优化
+- **PlaylistDrawer**：图标替换，毛玻璃效果增强
+- **SongItem**：更精致的列表项，播放中动画指示
+
+### 执行顺序
+
+按影响程度从高到低排列：
+
+1. ✅ 主题色增强（`colors.ts` 新增 `playerBg` 等字段）
+2. ✅ MainTabNavigator 图标替换（底部导航最显眼）
+3. ✅ MiniPlayer 重构（全局常驻组件，影响最大）
+4. ✅ PlayerScreen 重构（核心页面，视觉冲击最强）
+5. ⬜ HomeScreen 改良（首页体验）
+6. ⬜ SearchScreen 改良
+7. ⬜ UserScreen 改良
+8. ⬜ SettingsScreen 改良
+9. ⬜ 详情页改良（PlaylistDetail / ArtistDetail / AlbumDetail）
+10. ⬜ 其他页面（LoginScreen / DownloadScreen / PlaylistDrawer / SongItem）
+
+### 设计参考
+
+- **桌面端设计风格**：深色主题为主，毛玻璃效果，圆角卡片，渐变色运用
+- **桌面端播放器**：深色背景 + 旋转唱片封面 + 侧边播放列表
+- **桌面端侧边栏**：半透明毛玻璃 + 精致图标 + 分组列表
+- **色彩方案**：保持 `#ff3b3b` 主色调，播放器场景使用深蓝紫沉浸式背景
+
+---
+
+## 🔧 移动端 Bug 修复日志
+
+> 记录移动端运行时发现的问题及修复方案
+> 更新时间：2025-05-17
+
+### Bug 1：`@expo/vector-icons` 模块找不到
+
+**现象**：TypeScript 编译报错 `找不到模块"@expo/vector-icons"或其相应的类型声明`
+
+**原因**：`@expo/vector-icons` 是 Expo 内置包，但未在 `package.json` 中显式声明为依赖，TypeScript 无法解析类型
+
+**修复**：`npx expo install @expo/vector-icons`，安装了与 SDK 54 兼容的 `~15.0.0` 版本
+
+**涉及文件**：`package.json`
+
+---
+
+### Bug 2：底部 Tab 被虚拟按键手机遮挡
+
+**现象**：全面屏手势手机底部 Tab 距离 home indicator 太近，虚拟按键手机底部 Tab 被系统导航栏遮挡
+
+**原因**：`tabBarStyle` 写死 `paddingBottom: 4` 和 `height: 56`，未考虑设备安全区域
+
+**修复**：
+- 引入 `useSafeAreaInsets` 获取底部安全区域高度
+- `bottomPadding = Math.max(insets.bottom, 4)` — 全面屏手机取系统安全区域高度（20-34px），虚拟按键手机取最小值 4px
+- `tabBarHeight = 52 + bottomPadding` 动态计算
+- MiniPlayer 的 `bottom` 也跟随 `tabBarHeight` 动态调整
+
+**涉及文件**：`app/navigation/MainTabNavigator.tsx`
+
+---
+
+### Bug 3：播放器按钮全部失效 + 多点闪退
+
+**现象**：MiniPlayer 和 PlayerScreen 的播放/暂停/上一首/下一首按钮点击无反应，多点两次后 App 闪退
+
+**原因**：
+1. `trackPlayerService.skipToNext()` / `skipToPrevious()` 是空函数 (no-op)
+2. `togglePlayback()` 在 `soundRef` 为 null 时（App 重启后）直接返回
+3. MiniPlayer/PlayerControls 直接调用这些空函数，自然无效果
+
+**修复**：
+- `MiniPlayer.tsx` / `PlayerControls.tsx` — 改用 `usePlayer()` hook 的 `togglePlayback`、`next`、`prev`
+- `usePlayer.ts` — `togglePlayback` 新增重启场景处理：当 `soundRef` 为 null 但 `playMusic` 存在时，自动重新加载播放
+- `usePlayer.ts` — `next`/`prev` 改为 `playlistStore.nextPlay()` → `getCurrentSong()` → `playSong()` 完整流程
+- `playlistStore.ts` — `nextPlay`/`prevPlay` 只更新 `playListIndex`，不再设置 `playMusic/isPlay`（由 `usePlayer.playSong()` 统一管理）
+
+**涉及文件**：`app/components/player/MiniPlayer.tsx`、`app/components/player/PlayerControls.tsx`、`app/hooks/usePlayer.ts`、`app/store/playlistStore.ts`
+
+---
+
+### Bug 4：全屏播放器向下折叠闪退
+
+**现象**：全屏播放页面，点击左上角向下折叠按钮或下滑手势时 App 崩溃
+
+**原因**：`GestureDetector` 的 `Gesture.Pan().onEnd()` 回调在 UI 线程执行，直接调用 JS 侧的 `navigation.goBack()` 导致崩溃；`react-native-reanimated` 在 Expo Go 中初始化失败（`installTurboModule` 错误），导致 `runOnJS` 未定义
+
+**修复**：
+- 移除 `react-native-reanimated` 的 `Gesture`、`GestureDetector`、`runOnJS` 依赖
+- 使用手动 `Animated.timing` 实现下滑关闭动画：点击关闭时先播放 300ms 向下滑出动画，动画结束后再调用 `goBack()`
+- 同时解决了 `Cannot read property 'runOnJS' of undefined` 崩溃问题
+
+**涉及文件**：`app/screens/PlayerScreen.tsx`
+
+---
+
+### Bug 5：PlaylistDrawer 歌曲点击不播放
+
+**现象**：播放列表面板中点击歌曲，列表高亮切换了但没有声音
+
+**原因**：`handleSongPress` 只调用了 `setPlayListIndex` + `setPlayMusic` + `setIsPlay` — 只更新了 store，没有调用音频播放
+
+**修复**：改用 `usePlayer().playSong()` 完整播放流程
+
+**涉及文件**：`app/components/player/PlaylistDrawer.tsx`
+
+---
+
+### Bug 6：PlaylistDrawer 未被渲染
+
+**现象**：点击播放列表按钮毫无反应
+
+**原因**：`PlaylistDrawer` 组件写了但没在 `PlayerScreen` 中挂载
+
+**修复**：在 `PlayerScreen` 中添加 `<PlaylistDrawer />` 渲染
+
+**涉及文件**：`app/screens/PlayerScreen.tsx`
+
+---
+
+### Bug 7：播放结束不会自动下一首
+
+**现象**：歌曲播放完毕后停止，不会自动切到下一首
+
+**原因**：`trackPlayerService` 没有监听音频播放结束事件
+
+**修复**：
+- `trackPlayerService.ts` — 新增 `onPlaybackEnd` 回调 + 在 `playSong` 中注册 `onPlaybackStatusUpdate` 监听 `didJustFinish`
+- `usePlayer.ts` — 注册 `onPlaybackEnd` 回调，歌曲结束自动切下一首；单曲循环模式下重放当前歌曲
+
+**涉及文件**：`app/services/trackPlayerService.ts`、`app/hooks/usePlayer.ts`
+
+---
+
+### Bug 8：进度条不实时更新
+
+**现象**：播放器进度条卡住不动，不会随播放进度实时更新
+
+**原因**：`usePlayer` 用 `setInterval` 每秒轮询 `getCurrentPosition()`，1 秒间隔太慢且不可靠
+
+**修复**：
+- `trackPlayerService.ts` — 新增 `onProgressUpdate` 回调，在 `handlePlaybackStatusUpdate` 中每次 `expo-av` 上报播放状态时实时回调 `position` / `duration`
+- `usePlayer.ts` — 移除 `setInterval` 轮询，改为注册 `setOnProgressUpdate` 回调，通过 `usePlayerStore.getState()` 直接更新 store
+
+**涉及文件**：`app/services/trackPlayerService.ts`、`app/hooks/usePlayer.ts`、`app/services/index.ts`
+
+---
+
+### Bug 9：全屏播放器折叠过渡动画生硬
+
+**现象**：打开全屏播放器时从底部缓缓升起（流畅），但点击关闭时瞬间消失（生硬）
+
+**原因**：`presentation: 'modal'` + `animation: 'slide_from_bottom'` 只控制打开动画，Android 上 modal 关闭动画缺失
+
+**修复**：手动实现关闭动画——点击关闭时，整个页面通过 `Animated.timing` 从当前位置缓缓向下滑出（300ms），动画结束后再调用 `navigation.goBack()`
+
+**涉及文件**：`app/screens/PlayerScreen.tsx`
+
+---
+
+### Bug 10：Theme 循环依赖警告
+
+**现象**：终端输出 `Require cycle: app/theme/ThemeContext.tsx -> app/theme/index.ts -> app/theme/ThemeContext.tsx`
+
+**原因**：`ThemeContext.tsx` 从 `./index` 导入 `AppTheme` 接口和 `lightTheme/darkTheme`，而 `./index` 又从 `./ThemeContext` 导出
+
+**修复**：
+- 新建 `theme/types.ts` 存放 `AppTheme` 接口
+- `ThemeContext.tsx` 改为从 `./types` 导入接口，直接创建 theme 对象
+- `index.ts` 也从 `./types` 导入后 re-export
+- 依赖链变为单向：`ThemeContext → types`，`index → types + ThemeContext`
+
+**涉及文件**：`app/theme/types.ts`（新建）、`app/theme/ThemeContext.tsx`、`app/theme/index.ts`
+
+---
+
+### Bug 11：`initialScrollIndex` 越界闪退
+
+**现象**：播放列表为空或索引越界时，`FlatList` 的 `initialScrollIndex` 导致崩溃
+
+**修复**：添加 `Math.min(playListIndex, Math.max(playList.length - 1, 0))` 边界保护
+
+**涉及文件**：`app/components/player/PlaylistDrawer.tsx`

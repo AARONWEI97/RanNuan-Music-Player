@@ -5,8 +5,26 @@ import { useSettingsStore } from '../store/settingsStore';
 import { LightColors, DarkColors } from './colors';
 import { Typography } from './typography';
 import { Spacing, BorderRadius, IconSize } from './spacing';
-import type { AppTheme } from './index';
-import { lightTheme, darkTheme } from './index';
+import type { AppTheme } from './types';
+
+// 直接创建 theme 对象，避免从 ./index 循环引用
+const lightTheme: AppTheme = {
+  colors: LightColors,
+  typography: Typography,
+  spacing: Spacing,
+  borderRadius: BorderRadius,
+  iconSize: IconSize,
+  dark: false,
+};
+
+const darkTheme: AppTheme = {
+  colors: DarkColors,
+  typography: Typography,
+  spacing: Spacing,
+  borderRadius: BorderRadius,
+  iconSize: IconSize,
+  dark: true,
+};
 
 interface ThemeContextValue {
   theme: AppTheme;

@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { useUserStore } from '../store/userStore';
 import { usePlayHistoryStore } from '../store/playHistoryStore';
@@ -22,7 +23,13 @@ import type { RootStackScreenProps } from '../types';
 import NetworkImage from '../components/common/NetworkImage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_WIDTH = (SCREEN_WIDTH - 48) / 3;
+
+const MENU_ITEMS = [
+  { key: 'favorite', icon: 'heart-outline' as const, label: '我喜欢的音乐', activeIcon: 'heart' as const },
+  { key: 'download', icon: 'download-outline' as const, label: '本地/下载', activeIcon: 'download' as const },
+  { key: 'recent', icon: 'history' as const, label: '最近播放', activeIcon: 'history' as const },
+  { key: 'radio', icon: 'radio' as const, label: '我的电台', activeIcon: 'radio' as const },
+];
 
 export default function UserScreen() {
   const { colors } = useAppTheme();
@@ -52,14 +59,20 @@ export default function UserScreen() {
     navigation.navigate('Login');
   }, [navigation]);
 
+  const handleMenuPress = useCallback((key: string) => {
+    if (key === 'download') {
+      navigation.navigate('Download' as any);
+    }
+  }, [navigation]);
+
   const renderNotLoggedIn = () => (
     <View style={styles.loginPrompt}>
-      <View style={styles.avatarPlaceholder}>
-        <Text style={styles.avatarPlaceholderIcon}>👤</Text>
+      <View style={[styles.avatarPlaceholder, { backgroundColor: colors.surfaceVariant }]}>
+        <MaterialCommunityIcons name="account-circle" size={48} color={colors.textSecondary} />
       </View>
-      <Text style={styles.loginTitle}>登录网易云音乐</Text>
-      <Text style={styles.loginSubtitle}>登录后即可享受更多功能</Text>
-      <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
+      <Text style={[styles.loginTitle, { color: colors.text }]}>登录网易云音乐</Text>
+      <Text style={[styles.loginSubtitle, { color: colors.textSecondary }]}>登录后即可享受更多功能</Text>
+      <TouchableOpacity style={[styles.loginButton, { backgroundColor: colors.primary }]} onPress={handleLogin}>
         <Text style={styles.loginButtonText}>立即登录</Text>
       </TouchableOpacity>
     </View>
@@ -76,15 +89,17 @@ export default function UserScreen() {
         <View style={styles.profileHeader}>
           <NetworkImage uri={avatarUrl} style={styles.avatar} />
           <View style={styles.profileInfo}>
-            <Text style={styles.nickname}>{nickname}</Text>
+            <Text style={[styles.nickname, { color: colors.text }]}>{nickname}</Text>
             {vipType > 0 && (
               <View style={styles.vipBadge}>
+                <MaterialCommunityIcons name="crown" size={12} color="#333333" />
                 <Text style={styles.vipText}>VIP</Text>
               </View>
             )}
           </View>
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <Text style={styles.logoutText}>退出登录</Text>
+          <TouchableOpacity style={[styles.logoutButton, { borderColor: colors.border }]} onPress={handleLogout}>
+            <MaterialCommunityIcons name="logout" size={16} color={colors.textSecondary} />
+            <Text style={[styles.logoutText, { color: colors.textSecondary }]}>退出</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -96,7 +111,7 @@ export default function UserScreen() {
     if (playlistsLoading) {
       return (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>我的歌单</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>我的歌单</Text>
           <View style={styles.loadingBox}>
             <ActivityIndicator size="small" color={colors.primary} />
           </View>
@@ -109,22 +124,23 @@ export default function UserScreen() {
     return (
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>我的歌单</Text>
-          <Text style={styles.playlistCount}>{playlists.length}个歌单</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>我的歌单</Text>
+          <Text style={[styles.playlistCount, { color: colors.textSecondary }]}>{playlists.length}个歌单</Text>
         </View>
         {playlists.map((item) => (
           <TouchableOpacity
             key={String(item.id)}
-            style={styles.playlistCard}
+            style={[styles.playlistCard, { borderBottomColor: colors.divider }]}
             onPress={() => navigation.navigate('PlaylistDetail', { id: item.id })}
           >
             <NetworkImage uri={item.coverImgUrl} style={styles.playlistCover} />
             <View style={styles.playlistInfo}>
-              <Text style={styles.playlistName} numberOfLines={1}>{item.name}</Text>
-              <Text style={styles.playlistMeta}>
+              <Text style={[styles.playlistName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+              <Text style={[styles.playlistMeta, { color: colors.textSecondary }]}>
                 {item.trackCount}首 · {formatPlayCount(item.playCount)}次播放
               </Text>
             </View>
+            <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textTertiary} />
           </TouchableOpacity>
         ))}
       </View>
@@ -138,15 +154,15 @@ export default function UserScreen() {
     return (
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>最近播放</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>最近播放</Text>
           <TouchableOpacity onPress={() => {}}>
-            <Text style={styles.seeAllText}>查看全部</Text>
+          <Text style={[styles.seeAllText, { color: colors.primary }]}>查看全部</Text>
           </TouchableOpacity>
         </View>
         {recentItems.map((song, index) => (
           <TouchableOpacity
             key={String(song.id)}
-            style={styles.historyItem}
+            style={[styles.historyItem, { borderBottomColor: colors.divider }]}
             onPress={() => {}}
           >
             <NetworkImage
@@ -154,12 +170,12 @@ export default function UserScreen() {
               style={styles.historyCover}
             />
             <View style={styles.historyInfo}>
-              <Text style={styles.historyName} numberOfLines={1}>{song.name}</Text>
-              <Text style={styles.historyArtist} numberOfLines={1}>
+              <Text style={[styles.historyName, { color: colors.text }]} numberOfLines={1}>{song.name}</Text>
+              <Text style={[styles.historyArtist, { color: colors.textSecondary }]} numberOfLines={1}>
                 {song.ar?.map((a) => a.name).join(' / ') || '未知歌手'}
               </Text>
             </View>
-            <Text style={styles.historyCount}>{song.count || 0}次</Text>
+            <Text style={[styles.historyCount, { color: colors.textTertiary }]}>{song.count || 0}次</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -168,33 +184,26 @@ export default function UserScreen() {
 
   const renderMenuItems = () => (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>我的音乐</Text>
-      <TouchableOpacity style={styles.menuItem} onPress={() => {}}>
-        <Text style={styles.menuIcon}>❤️</Text>
-        <Text style={styles.menuLabel}>我喜欢的音乐</Text>
-        <Text style={styles.menuArrow}>›</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('Download' as any)}>
-        <Text style={styles.menuIcon}>📥</Text>
-        <Text style={styles.menuLabel}>本地/下载</Text>
-        <Text style={styles.menuArrow}>›</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.menuItem} onPress={() => {}}>
-        <Text style={styles.menuIcon}>🕐</Text>
-        <Text style={styles.menuLabel}>最近播放</Text>
-        <Text style={styles.menuArrow}>›</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.menuItem} onPress={() => {}}>
-        <Text style={styles.menuIcon}>📻</Text>
-        <Text style={styles.menuLabel}>我的电台</Text>
-        <Text style={styles.menuArrow}>›</Text>
-      </TouchableOpacity>
+      <Text style={[styles.sectionTitle, { color: colors.text }]}>我的音乐</Text>
+      {MENU_ITEMS.map((item) => (
+        <TouchableOpacity
+          key={item.key}
+          style={[styles.menuItem, { borderBottomColor: colors.divider }]}
+          onPress={() => handleMenuPress(item.key)}
+        >
+          <View style={[styles.menuIconWrapper, { backgroundColor: `${colors.primary}15` }]}>
+            <MaterialCommunityIcons name={item.icon} size={22} color={colors.primary} />
+          </View>
+          <Text style={[styles.menuLabel, { color: colors.text }]}>{item.label}</Text>
+          <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textTertiary} />
+        </TouchableOpacity>
+      ))}
     </View>
   );
 
   return (
     <ScrollView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.background }]}
       contentContainerStyle={{ paddingTop: insets.top, paddingBottom: 100 }}
       showsVerticalScrollIndicator={false}
     >
@@ -210,7 +219,6 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   loginPrompt: {
     alignItems: 'center',
@@ -222,26 +230,19 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: colors.surfaceVariant,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.lg,
   },
-  avatarPlaceholderIcon: {
-    fontSize: 36,
-  },
   loginTitle: {
     ...Typography.h3,
-    color: colors.text,
     marginBottom: Spacing.xs,
   },
   loginSubtitle: {
     ...Typography.body2,
-    color: colors.textSecondary,
     marginBottom: Spacing.xl,
   },
   loginButton: {
-    backgroundColor: colors.primary,
     paddingHorizontal: Spacing.xxl,
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.xxl,
@@ -271,10 +272,11 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   },
   nickname: {
     ...Typography.h4,
-    color: colors.text,
     fontWeight: '600',
   },
   vipBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#FFD700',
     paddingHorizontal: Spacing.sm,
     paddingVertical: 2,
@@ -286,17 +288,19 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     ...Typography.overline,
     color: '#333333',
     fontWeight: '700',
+    marginLeft: 2,
   },
   logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.xxl,
     borderWidth: 1,
-    borderColor: colors.border,
   },
   logoutText: {
     ...Typography.caption,
-    color: colors.textSecondary,
+    marginLeft: 4,
   },
   section: {
     paddingHorizontal: Spacing.lg,
@@ -310,18 +314,15 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   },
   sectionTitle: {
     ...Typography.h4,
-    color: colors.text,
     fontWeight: '600',
     marginBottom: Spacing.md,
   },
   playlistCount: {
     ...Typography.caption,
-    color: colors.textSecondary,
     marginBottom: Spacing.md,
   },
   seeAllText: {
     ...Typography.caption,
-    color: colors.primary,
   },
   loadingBox: {
     paddingVertical: Spacing.xl,
@@ -331,6 +332,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: Spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   playlistCover: {
     width: 52,
@@ -344,18 +346,17 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   },
   playlistName: {
     ...Typography.body2,
-    color: colors.text,
     fontWeight: '500',
     marginBottom: 2,
   },
   playlistMeta: {
     ...Typography.caption,
-    color: colors.textSecondary,
   },
   historyItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: Spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   historyCover: {
     width: 44,
@@ -369,37 +370,32 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   },
   historyName: {
     ...Typography.body2,
-    color: colors.text,
     fontWeight: '500',
     marginBottom: 2,
   },
   historyArtist: {
     ...Typography.caption,
-    color: colors.textSecondary,
   },
   historyCount: {
     ...Typography.caption,
-    color: colors.textTertiary,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: Spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.divider,
   },
-  menuIcon: {
-    fontSize: 20,
+  menuIconWrapper: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: Spacing.md,
   },
   menuLabel: {
     flex: 1,
     ...Typography.body2,
-    color: colors.text,
-  },
-  menuArrow: {
-    fontSize: 20,
-    color: colors.textTertiary,
   },
   });
 }

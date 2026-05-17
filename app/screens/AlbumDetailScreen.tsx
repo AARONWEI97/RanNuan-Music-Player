@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,12 +7,14 @@ import {
   RefreshControl,
   StyleSheet,
 } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+
 import SongList from '../components/music/SongList';
 import NetworkImage from '../components/common/NetworkImage';
 import { usePlayer } from '../hooks/usePlayer';
 import { usePlaylist } from '../hooks/usePlaylist';
+import { useAppTheme } from '../theme/ThemeContext';
 import { getAlbumDetail } from '../api/music';
-import { LightColors } from '../theme/colors';
 import { Spacing, BorderRadius } from '../theme/spacing';
 import { Typography } from '../theme/typography';
 import { formatPlayCount } from '../utils/format';
@@ -22,6 +24,8 @@ export default function AlbumDetailScreen({
   route,
 }: RootStackScreenProps<'AlbumDetail'>) {
   const { id } = route.params;
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [album, setAlbum] = useState<any>(null);
   const [songs, setSongs] = useState<SongResult[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,17 +105,18 @@ export default function AlbumDetailScreen({
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={LightColors.primary} />
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>加载失败</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={fetchData}>
+      <View style={[styles.errorContainer, { backgroundColor: colors.background }]}>
+        <MaterialCommunityIcons name="alert-circle-outline" size={48} color={colors.textSecondary} />
+        <Text style={[styles.errorText, { color: colors.textSecondary }]}>加载失败</Text>
+        <TouchableOpacity style={[styles.retryButton, { backgroundColor: colors.primary }]} onPress={fetchData}>
           <Text style={styles.retryText}>重试</Text>
         </TouchableOpacity>
       </View>
@@ -123,41 +128,50 @@ export default function AlbumDetailScreen({
       <View style={styles.header}>
         <NetworkImage uri={album?.picUrl} style={styles.cover} />
         <View style={styles.headerInfo}>
-          <Text style={styles.albumName} numberOfLines={2}>
+          <Text style={[styles.albumName, { color: colors.text }]} numberOfLines={2}>
             {album?.name}
           </Text>
-          <Text style={styles.artistName} numberOfLines={1}>
-            {album?.artist?.name}
-          </Text>
-          {album?.publishTime ? (
-            <Text style={styles.publishTime}>
-              {formatPublishTime(album.publishTime)}
+          <TouchableOpacity style={styles.artistRow}>
+            <MaterialCommunityIcons name="account-music" size={14} color={colors.primary} />
+            <Text style={[styles.artistName, { color: colors.primary }]} numberOfLines={1}>
+              {album?.artist?.name}
             </Text>
+          </TouchableOpacity>
+          {album?.publishTime ? (
+            <View style={styles.metaRow}>
+              <MaterialCommunityIcons name="calendar-outline" size={12} color={colors.textTertiary} />
+              <Text style={[styles.publishTime, { color: colors.textTertiary }]}>
+                {formatPublishTime(album.publishTime)}
+              </Text>
+            </View>
           ) : null}
           {album?.size ? (
-            <Text style={styles.songCount}>{album.size}首</Text>
+            <View style={styles.metaRow}>
+              <MaterialCommunityIcons name="music-note" size={12} color={colors.textTertiary} />
+              <Text style={[styles.songCount, { color: colors.textTertiary }]}>{album.size}首</Text>
+            </View>
           ) : null}
         </View>
       </View>
 
       {album?.description ? (
         <View style={styles.descContainer}>
-          <Text style={styles.descLabel}>简介</Text>
-          <Text style={styles.descText} numberOfLines={3}>
+          <Text style={[styles.descLabel, { color: colors.text }]}>简介</Text>
+          <Text style={[styles.descText, { color: colors.textSecondary }]} numberOfLines={3}>
             {album.description}
           </Text>
         </View>
       ) : null}
 
-      <TouchableOpacity style={styles.playAllButton} onPress={handlePlayAll}>
-        <Text style={styles.playAllIcon}>▶</Text>
+      <TouchableOpacity style={[styles.playAllButton, { backgroundColor: colors.primary }]} onPress={handlePlayAll}>
+        <MaterialCommunityIcons name="play" size={18} color="#ffffff" />
         <Text style={styles.playAllText}>播放全部</Text>
       </TouchableOpacity>
     </View>
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <SongList
         songs={songs}
         onSongPress={handleSongPress}
@@ -166,8 +180,8 @@ export default function AlbumDetailScreen({
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            colors={[LightColors.primary]}
-            tintColor={LightColors.primary}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
           />
         }
       />
@@ -175,30 +189,27 @@ export default function AlbumDetailScreen({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: LightColors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: LightColors.background,
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: LightColors.background,
   },
   errorText: {
     ...Typography.body1,
-    color: LightColors.textSecondary,
-    marginBottom: Spacing.md,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.lg,
   },
   retryButton: {
-    backgroundColor: LightColors.primary,
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.md,
@@ -218,7 +229,7 @@ const styles = StyleSheet.create({
     width: 140,
     height: 140,
     borderRadius: BorderRadius.md,
-    backgroundColor: LightColors.surfaceVariant,
+    backgroundColor: colors.surfaceVariant,
   },
   headerInfo: {
     flex: 1,
@@ -227,23 +238,30 @@ const styles = StyleSheet.create({
   },
   albumName: {
     ...Typography.h3,
-    color: LightColors.text,
     fontWeight: '600',
+    marginBottom: Spacing.xs,
+  },
+  artistRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: Spacing.xs,
   },
   artistName: {
     ...Typography.body2,
-    color: LightColors.primary,
+    marginLeft: 4,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: Spacing.xs,
   },
   publishTime: {
     ...Typography.caption,
-    color: LightColors.textSecondary,
-    marginBottom: Spacing.xs,
+    marginLeft: 4,
   },
   songCount: {
     ...Typography.caption,
-    color: LightColors.textSecondary,
+    marginLeft: 4,
   },
   descContainer: {
     paddingHorizontal: Spacing.lg,
@@ -251,34 +269,28 @@ const styles = StyleSheet.create({
   },
   descLabel: {
     ...Typography.body2,
-    color: LightColors.text,
     fontWeight: '500',
     marginBottom: Spacing.xs,
   },
   descText: {
     ...Typography.caption,
-    color: LightColors.textSecondary,
     lineHeight: 18,
   },
   playAllButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     marginHorizontal: Spacing.lg,
     marginVertical: Spacing.md,
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.md,
-    backgroundColor: LightColors.primary,
     borderRadius: BorderRadius.xl,
-    justifyContent: 'center',
-  },
-  playAllIcon: {
-    fontSize: 14,
-    color: '#ffffff',
-    marginRight: Spacing.xs,
   },
   playAllText: {
     ...Typography.body2,
     color: '#ffffff',
     fontWeight: '600',
+    marginLeft: Spacing.xs,
   },
-});
+  });
+}

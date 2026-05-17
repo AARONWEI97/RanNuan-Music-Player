@@ -1,7 +1,8 @@
 import React, { Component, ErrorInfo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-import { LightColors } from '../../theme/colors';
+import { useAppTheme } from '../../theme/ThemeContext';
 import { Spacing, BorderRadius } from '../../theme/spacing';
 import { Typography } from '../../theme/typography';
 
@@ -13,6 +14,24 @@ interface Props {
 interface State {
   hasError: boolean;
   error: Error | null;
+}
+
+// We need a wrapper to use hooks in class components
+function ErrorContent({ error, onReset }: { error: Error | null; onReset: () => void }) {
+  const { colors } = useAppTheme();
+
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <MaterialCommunityIcons name="alert-circle-outline" size={48} color={colors.warning} />
+      <Text style={[styles.title, { color: colors.text }]}>出了点问题</Text>
+      <Text style={[styles.message, { color: colors.textSecondary }]}>
+        {error?.message || '应用遇到了一个意外错误'}
+      </Text>
+      <TouchableOpacity style={[styles.button, { backgroundColor: colors.primary }]} onPress={onReset}>
+        <Text style={styles.buttonText}>重试</Text>
+      </TouchableOpacity>
+    </View>
+  );
 }
 
 export default class ErrorBoundary extends Component<Props, State> {
@@ -40,16 +59,10 @@ export default class ErrorBoundary extends Component<Props, State> {
       }
 
       return (
-        <View style={styles.container}>
-          <Text style={styles.icon}>⚠️</Text>
-          <Text style={styles.title}>出了点问题</Text>
-          <Text style={styles.message}>
-            {this.state.error?.message || '应用遇到了一个意外错误'}
-          </Text>
-          <TouchableOpacity style={styles.button} onPress={this.handleReset}>
-            <Text style={styles.buttonText}>重试</Text>
-          </TouchableOpacity>
-        </View>
+        <ErrorContent
+          error={this.state.error}
+          onReset={this.handleReset}
+        />
       );
     }
 
@@ -63,26 +76,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: Spacing.xl,
-    backgroundColor: LightColors.background,
-  },
-  icon: {
-    fontSize: 48,
-    marginBottom: Spacing.lg,
   },
   title: {
     ...Typography.h3,
-    color: LightColors.text,
+    marginTop: Spacing.lg,
     marginBottom: Spacing.sm,
   },
   message: {
     ...Typography.body2,
-    color: LightColors.textSecondary,
     textAlign: 'center',
     marginBottom: Spacing.xl,
     lineHeight: 22,
   },
   button: {
-    backgroundColor: LightColors.primary,
     paddingHorizontal: Spacing.xxl,
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.xxl,

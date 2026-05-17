@@ -125,10 +125,8 @@ export const usePlaylistStore = create<PlaylistState & PlaylistActions>()(
         }
 
         set({ playListIndex: nextIndex });
-        const nextSong = playList[nextIndex];
-        if (nextSong) {
-          usePlayerStore.setState({ playMusic: nextSong, isPlay: true });
-        }
+        // 不再在这里设置 playMusic/isPlay，由 usePlayer.playSong 统一处理
+        // 这样避免了 store 和音频播放的双重更新导致的状态不一致
       },
 
       prevPlay: () => {
@@ -143,10 +141,7 @@ export const usePlaylistStore = create<PlaylistState & PlaylistActions>()(
         }
 
         set({ playListIndex: prevIndex });
-        const prevSong = playList[prevIndex];
-        if (prevSong) {
-          usePlayerStore.setState({ playMusic: prevSong, isPlay: true });
-        }
+        // 不再在这里设置 playMusic/isPlay，由 usePlayer.playSong 统一处理
       },
 
       setPlayListIndex: (index) => set({ playListIndex: index }),

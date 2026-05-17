@@ -9,13 +9,15 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import SongList from '../components/music/SongList';
 import NetworkImage from '../components/common/NetworkImage';
 import { usePlayer } from '../hooks/usePlayer';
 import { usePlaylist } from '../hooks/usePlaylist';
+import { useAppTheme } from '../theme/ThemeContext';
 import { getArtistDetail, getArtistTopSongs } from '../api/artist';
-import { LightColors } from '../theme/colors';
 import { Spacing, BorderRadius } from '../theme/spacing';
 import { Typography } from '../theme/typography';
 import type { SongResult, RootStackScreenProps } from '../types';
@@ -36,6 +38,8 @@ interface ArtistInfo {
 export default function ArtistDetailScreen({ route }: RootStackScreenProps<'ArtistDetail'>) {
   const { id } = route.params;
   const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const { playSong } = usePlayer();
   const { playAll } = usePlaylist();
 
@@ -120,15 +124,20 @@ export default function ArtistDetailScreen({ route }: RootStackScreenProps<'Arti
     <>
       <View style={styles.coverContainer}>
         <NetworkImage uri={coverUrl} style={styles.coverImage} />
-        <View style={styles.coverGradient} />
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.7)']}
+          style={styles.coverGradient}
+        />
         <View style={[styles.coverInfo, { paddingBottom: insets.top > 0 ? Spacing.lg : Spacing.xl }]}>
           <Text style={styles.artistName}>{artist?.name}</Text>
           {aliasText ? (
             <Text style={styles.artistAlias}>{aliasText}</Text>
           ) : null}
           <View style={styles.statsRow}>
+            <MaterialCommunityIcons name="music-note" size={14} color="rgba(255,255,255,0.8)" />
             <Text style={styles.statsText}>{artist?.musicSize || 0} 首歌曲</Text>
             <Text style={styles.statsDot}>·</Text>
+            <MaterialCommunityIcons name="disc" size={14} color="rgba(255,255,255,0.8)" />
             <Text style={styles.statsText}>{artist?.albumSize || 0} 张专辑</Text>
           </View>
         </View>
@@ -136,7 +145,7 @@ export default function ArtistDetailScreen({ route }: RootStackScreenProps<'Arti
 
       {artist?.briefDesc ? (
         <View style={styles.briefSection}>
-          <Text style={styles.briefText} numberOfLines={3} ellipsizeMode="tail">
+          <Text style={[styles.briefText, { color: colors.textSecondary }]} numberOfLines={3} ellipsizeMode="tail">
             {artist.briefDesc}
           </Text>
         </View>
@@ -144,29 +153,30 @@ export default function ArtistDetailScreen({ route }: RootStackScreenProps<'Arti
 
       {songs.length > 0 ? (
         <View style={styles.playAllRow}>
-          <TouchableOpacity style={styles.playAllButton} onPress={handlePlayAll} activeOpacity={0.7}>
-            <Text style={styles.playAllIcon}>▶</Text>
+          <TouchableOpacity style={[styles.playAllButton, { backgroundColor: colors.primary }]} onPress={handlePlayAll} activeOpacity={0.7}>
+            <MaterialCommunityIcons name="play" size={18} color="#ffffff" />
             <Text style={styles.playAllText}>播放全部</Text>
           </TouchableOpacity>
-          <Text style={styles.songCount}>{songs.length} 首</Text>
+          <Text style={[styles.songCount, { color: colors.textSecondary }]}>{songs.length} 首</Text>
         </View>
       ) : null}
     </>
-  ), [artist, coverUrl, aliasText, songs, handlePlayAll, insets.top]);
+  ), [artist, coverUrl, aliasText, songs, handlePlayAll, insets.top, colors]);
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={LightColors.primary} />
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>加载失败</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={fetchData}>
+      <View style={[styles.errorContainer, { backgroundColor: colors.background }]}>
+        <MaterialCommunityIcons name="alert-circle-outline" size={48} color={colors.textSecondary} />
+        <Text style={[styles.errorText, { color: colors.textSecondary }]}>加载失败</Text>
+        <TouchableOpacity style={[styles.retryButton, { backgroundColor: colors.primary }]} onPress={fetchData}>
           <Text style={styles.retryText}>重试</Text>
         </TouchableOpacity>
       </View>
@@ -181,43 +191,42 @@ export default function ArtistDetailScreen({ route }: RootStackScreenProps<'Arti
       contentContainerStyle={styles.songListContent}
       ListEmptyComponent={
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>暂无热门歌曲</Text>
+          <MaterialCommunityIcons name="music-note-off" size={40} color={colors.textTertiary} />
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>暂无热门歌曲</Text>
         </View>
       }
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
           onRefresh={handleRefresh}
-          colors={[LightColors.primary]}
-          tintColor={LightColors.primary}
+          colors={[colors.primary]}
+          tintColor={colors.primary}
         />
       }
     />
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
+  return StyleSheet.create({
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: LightColors.background,
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: LightColors.background,
   },
   errorText: {
     ...Typography.body1,
-    color: LightColors.textSecondary,
+    marginTop: Spacing.md,
     marginBottom: Spacing.lg,
   },
   retryButton: {
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.md,
-    backgroundColor: LightColors.primary,
     borderRadius: BorderRadius.xxl,
   },
   retryText: {
@@ -239,7 +248,6 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     height: COVER_HEIGHT * 0.6,
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
   },
   coverInfo: {
     position: 'absolute',
@@ -266,6 +274,7 @@ const styles = StyleSheet.create({
   statsText: {
     ...Typography.caption,
     color: 'rgba(255, 255, 255, 0.8)',
+    marginLeft: 4,
   },
   statsDot: {
     ...Typography.caption,
@@ -278,7 +287,6 @@ const styles = StyleSheet.create({
   },
   briefText: {
     ...Typography.body2,
-    color: LightColors.textSecondary,
     lineHeight: 20,
   },
   playAllRow: {
@@ -292,24 +300,18 @@ const styles = StyleSheet.create({
   playAllButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: LightColors.primary,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.xxl,
-  },
-  playAllIcon: {
-    color: '#ffffff',
-    fontSize: 14,
-    marginRight: Spacing.sm,
   },
   playAllText: {
     ...Typography.body2,
     color: '#ffffff',
     fontWeight: '600',
+    marginLeft: Spacing.xs,
   },
   songCount: {
     ...Typography.caption,
-    color: LightColors.textSecondary,
   },
   songListContent: {
     paddingBottom: 100,
@@ -321,6 +323,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     ...Typography.body2,
-    color: LightColors.textSecondary,
+    marginTop: Spacing.sm,
   },
-});
+  });
+}

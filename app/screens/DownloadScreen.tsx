@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { useDownload } from '../hooks/useDownload';
 import { usePlayer } from '../hooks/usePlayer';
@@ -43,6 +44,17 @@ function getStatusColor(status: DownloadTask['status'], colors: ReturnType<typeo
     completed: colors.success,
     failed: colors.error,
     paused: colors.warning,
+  };
+  return map[status];
+}
+
+function getStatusIcon(status: DownloadTask['status']): React.ComponentProps<typeof MaterialCommunityIcons>['name'] {
+  const map: Record<DownloadTask['status'], React.ComponentProps<typeof MaterialCommunityIcons>['name']> = {
+    pending: 'clock-outline',
+    downloading: 'download',
+    completed: 'check-circle',
+    failed: 'alert-circle',
+    paused: 'pause-circle',
   };
   return map[status];
 }
@@ -105,28 +117,29 @@ export default function DownloadScreen() {
 
       return (
         <TouchableOpacity
-          style={styles.itemContainer}
+          style={[styles.itemContainer, { backgroundColor: colors.card, borderBottomColor: colors.divider }]}
           onPress={() => item.status === 'completed' ? handlePlay(item) : undefined}
           activeOpacity={item.status === 'completed' ? 0.7 : 1}
         >
           <NetworkImage uri={coverUrl} style={styles.cover} />
           <View style={styles.info}>
-            <Text style={styles.songName} numberOfLines={1}>{item.song.name}</Text>
-            <Text style={styles.artistName} numberOfLines={1}>{artistName}</Text>
+            <Text style={[styles.songName, { color: colors.text }]} numberOfLines={1}>{item.song.name}</Text>
+            <Text style={[styles.artistName, { color: colors.textSecondary }]} numberOfLines={1}>{artistName}</Text>
             <View style={styles.statusRow}>
+              <MaterialCommunityIcons name={getStatusIcon(item.status)} size={14} color={getStatusColor(item.status, colors)} />
               <Text style={[styles.statusText, { color: getStatusColor(item.status, colors) }]}>
                 {getStatusText(item.status)}
               </Text>
               {item.status === 'downloading' && (
-                <Text style={styles.progressText}>{Math.round(item.progress * 100)}%</Text>
+                <Text style={[styles.progressText, { color: colors.primary }]}>{Math.round(item.progress * 100)}%</Text>
               )}
               {item.fileSize ? (
-                <Text style={styles.sizeText}>{formatFileSize(item.fileSize)}</Text>
+                <Text style={[styles.sizeText, { color: colors.textTertiary }]}>{formatFileSize(item.fileSize)}</Text>
               ) : null}
             </View>
             {item.status === 'downloading' && (
-              <View style={styles.progressBarBg}>
-                <View style={[styles.progressBarFill, { width: `${item.progress * 100}%` }]} />
+              <View style={[styles.progressBarBg, { backgroundColor: colors.surfaceVariant }]}>
+                <View style={[styles.progressBarFill, { width: `${item.progress * 100}%`, backgroundColor: colors.primary }]} />
               </View>
             )}
           </View>
@@ -135,12 +148,12 @@ export default function DownloadScreen() {
             onPress={() => handleDelete(item)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Text style={styles.deleteIcon}>🗑️</Text>
+            <MaterialCommunityIcons name="delete-outline" size={22} color={colors.textTertiary} />
           </TouchableOpacity>
         </TouchableOpacity>
       );
     },
-    [handlePlay, handleDelete]
+    [handlePlay, handleDelete, colors]
   );
 
   const keyExtractor = useCallback((item: DownloadTask) => String(item.song.id), []);
@@ -149,21 +162,21 @@ export default function DownloadScreen() {
     if (completedList.length === 0) return null;
     return (
       <View style={styles.headerRow}>
-        <Text style={styles.headerTitle}>
+        <Text style={[styles.headerTitle, { color: colors.textSecondary }]}>
           已完成 {completedList.length} 首
         </Text>
         <TouchableOpacity onPress={handleClearAll}>
-          <Text style={styles.clearAllText}>清除全部</Text>
+          <Text style={[styles.clearAllText, { color: colors.error }]}>清除全部</Text>
         </TouchableOpacity>
       </View>
     );
-  }, [completedList.length, handleClearAll]);
+  }, [completedList.length, handleClearAll, colors]);
 
   if (allItems.length === 0) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
+      <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
         <View style={styles.titleBar}>
-          <Text style={styles.title}>下载管理</Text>
+          <Text style={[styles.title, { color: colors.text }]}>下载管理</Text>
         </View>
         <EmptyState title="暂无下载任务" />
       </View>
@@ -171,9 +184,9 @@ export default function DownloadScreen() {
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
       <View style={styles.titleBar}>
-        <Text style={styles.title}>下载管理</Text>
+        <Text style={[styles.title, { color: colors.text }]}>下载管理</Text>
       </View>
       {ListHeader}
       <FlatList
@@ -191,7 +204,6 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   titleBar: {
     paddingHorizontal: Spacing.lg,
@@ -199,7 +211,6 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   },
   title: {
     ...Typography.h4,
-    color: colors.text,
     fontWeight: '700',
   },
   headerRow: {
@@ -211,11 +222,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   },
   headerTitle: {
     ...Typography.body2,
-    color: colors.textSecondary,
   },
   clearAllText: {
     ...Typography.caption,
-    color: colors.error,
   },
   listContent: {
     paddingBottom: 100,
@@ -225,9 +234,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    backgroundColor: colors.card,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.divider,
   },
   cover: {
     width: 48,
@@ -242,19 +249,17 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   },
   songName: {
     ...Typography.body2,
-    color: colors.text,
     fontWeight: '500',
     marginBottom: 2,
   },
   artistName: {
     ...Typography.caption,
-    color: colors.textSecondary,
     marginBottom: 4,
   },
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
+    gap: Spacing.xs,
   },
   statusText: {
     ...Typography.overline,
@@ -262,29 +267,22 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   },
   progressText: {
     ...Typography.overline,
-    color: colors.primary,
   },
   sizeText: {
     ...Typography.overline,
-    color: colors.textTertiary,
   },
   progressBarBg: {
     height: 3,
-    backgroundColor: colors.surfaceVariant,
     borderRadius: 2,
     marginTop: 4,
     overflow: 'hidden',
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: colors.primary,
     borderRadius: 2,
   },
   deleteButton: {
     padding: Spacing.xs,
-  },
-  deleteIcon: {
-    fontSize: 18,
   },
   });
 }
