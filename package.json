@@ -8,6 +8,9 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "api": "npx NeteaseCloudMusicApi@latest",
+    "dev": "concurrently \"npm run api\" \"expo start\"",
+    "dev:web": "concurrently \"npm run api\" \"expo start --web\"",
     "postinstall": "node scripts/patch-zustand.js",
     "typecheck": "tsc --noEmit"
   },
@@ -58,6 +61,7 @@
   "devDependencies": {
     "@types/react": "~19.1.0",
     "babel-preset-expo": "~54.0.10",
+    "concurrently": "^9.2.1",
     "typescript": "~5.9.2"
   },
   "private": false
