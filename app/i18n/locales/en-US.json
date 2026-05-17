@@ -1,0 +1,149 @@
+{
+  "common": {
+    "confirm": "OK",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "save": "Save",
+    "loading": "Loading...",
+    "retry": "Retry",
+    "search": "Search",
+    "playAll": "Play All",
+    "noData": "No Data",
+    "seeAll": "See All",
+    "clear": "Clear",
+    "reset": "Reset to Default"
+  },
+  "tab": {
+    "home": "Home",
+    "search": "Search",
+    "user": "Me",
+    "settings": "Settings"
+  },
+  "home": {
+    "banner": "Banner",
+    "recommendPlaylist": "Recommended Playlists",
+    "recommendMusic": "Recommended Music",
+    "hotArtists": "Hot Artists",
+    "newAlbums": "New Albums"
+  },
+  "search": {
+    "placeholder": "Search songs, artists, albums",
+    "hotSearch": "Hot Search",
+    "searchHistory": "Search History",
+    "clearHistory": "Clear Search History",
+    "songs": "Songs",
+    "artists": "Artists",
+    "albums": "Albums",
+    "playlists": "Playlists"
+  },
+  "player": {
+    "noMusic": "No Music Playing",
+    "unknownArtist": "Unknown Artist",
+    "tapForLyric": "Tap for Lyrics",
+    "lyric": "Lyrics",
+    "cover": "Cover",
+    "download": "Download",
+    "downloaded": "Downloaded",
+    "playlist": "Playlist",
+    "playMode": "Play Mode"
+  },
+  "lyric": {
+    "loading": "Loading lyrics...",
+    "empty": "No Lyrics Available",
+    "showTranslation": "Show Lyric Translation"
+  },
+  "user": {
+    "login": "Login to NetEase Cloud Music",
+    "loginSubtitle": "Login to enjoy more features",
+    "loginNow": "Login Now",
+    "logout": "Logout",
+    "myPlaylists": "My Playlists",
+    "playlistsCount": "{{count}} playlists",
+    "myMusic": "My Music",
+    "myFavorite": "My Favorites",
+    "localDownload": "Local / Downloads",
+    "recentPlay": "Recent Plays",
+    "myRadio": "My Radio",
+    "playCount": "{{count}} plays",
+    "playTimes": "{{count}} times"
+  },
+  "download": {
+    "title": "Downloads",
+    "completed": "{{count}} songs downloaded",
+    "clearAll": "Clear All",
+    "empty": "No Downloads",
+    "pending": "Pending",
+    "downloading": "Downloading",
+    "completedStatus": "Completed",
+    "failed": "Failed",
+    "paused": "Paused",
+    "deleteConfirm": "Delete \"{{name}}\"?",
+    "deleteTitle": "Delete Download",
+    "clearAllConfirm": "Clear all downloaded songs?",
+    "clearAllTitle": "Clear All"
+  },
+  "settings": {
+    "appearance": "Appearance",
+    "language": "Language",
+    "network": "Network",
+    "playback": "Playback",
+    "lyrics": "Lyrics",
+    "musicParsing": "Music Parsing",
+    "general": "General",
+    "about": "About",
+    "theme": "Theme",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeSystem": "System",
+    "apiUrl": "API URL",
+    "quality": "Audio Quality",
+    "qualityStandard": "Standard",
+    "qualityHigher": "High",
+    "qualityExhigh": "Very High",
+    "qualityLossless": "Lossless",
+    "showLyricTranslation": "Show Lyric Translation",
+    "enableMusicParsing": "Enable Music Parsing",
+    "customApiUrl": "Custom Music API",
+    "customApiUrlHint": "Third-party music source API URL",
+    "lxMusicApi": "LxMusic API",
+    "lxMusicApiHint": "LxMusic source parsing service URL",
+    "unblockService": "Unblock Service URL",
+    "unblockServiceHint": "UnblockNeteaseMusic server URL",
+    "clearParsingCache": "Clear Parsing Cache",
+    "autoPlay": "Auto Play",
+    "version": "Version"
+  },
+  "login": {
+    "title": "Login",
+    "qrCode": "QR Code Login",
+    "qrCodeHint": "Scan with NetEase Cloud Music APP",
+    "qrCodeExpired": "QR Code expired, tap to refresh",
+    "qrCodeScanned": "Scanned, please confirm on your phone",
+    "phone": "Phone Login",
+    "phonePlaceholder": "Enter phone number",
+    "passwordPlaceholder": "Enter password",
+    "uidLogin": "UID Login",
+    "uidPlaceholder": "Enter NetEase Cloud Music UID"
+  },
+  "playlist": {
+    "songs": "{{count}} songs",
+    "creator": "Creator",
+    "tags": "Tags",
+    "description": "Description"
+  },
+  "album": {
+    "releaseDate": "Release Date",
+    "artist": "Artist"
+  },
+  "artist": {
+    "hotSongs": "Hot Songs",
+    "albums": "Albums",
+    "about": "About"
+  },
+  "error": {
+    "network": "Network error, please check your connection",
+    "playFailed": "Playback failed, please retry",
+    "loginExpired": "Login expired, please login again",
+    "generic": "Operation failed, please try again later"
+  }
+}
