@@ -23,6 +23,7 @@ let soundRef: Audio.Sound | null = null;
 let currentTrackId: string | null = null;
 let onPlaybackEndCallback: (() => void) | null = null;
 let onProgressUpdateCallback: ((update: ProgressUpdate) => void) | null = null;
+let playGeneration = 0; // 用于取消过期的播放请求
 
 export const isPlayerAvailable = Platform.OS !== 'web';
 
@@ -81,6 +82,7 @@ function handlePlaybackStatusUpdate(status: AVPlaybackStatus) {
 }
 
 export async function playSong(song: SongResult, url: string): Promise<void> {
+  const thisGeneration = ++playGeneration;
   try {
     // 同一首歌且 soundRef 存在 → 直接播放
     if (soundRef && currentTrackId === String(song.id)) {
@@ -94,11 +96,21 @@ export async function playSong(song: SongResult, url: string): Promise<void> {
       soundRef = null;
     }
 
+    // 检查是否有更新的播放请求
+    if (thisGeneration !== playGeneration) return;
+
     const { sound } = await Audio.Sound.createAsync(
       { uri: url },
       { shouldPlay: true },
       handlePlaybackStatusUpdate,
     );
+
+    // 创建音频后再次检查，防止创建期间有新的播放请求
+    if (thisGeneration !== playGeneration) {
+      await sound.unloadAsync();
+      return;
+    }
+
     soundRef = sound;
     currentTrackId = String(song.id);
   } catch (e) {
@@ -214,4 +226,28 @@ export function getSoundRef(): Audio.Sound | null {
 
 export function hasSoundRef(): boolean {
   return soundRef !== null;
+}
+
+export async function stopPlayback(): Promise<void> {
+  if (soundRef) {
+    try {
+      await soundRef.stopAsync();
+      await soundRef.unloadAsync();
+    } catch {}
+    soundRef = null;
+    currentTrackId = null;
+  }
+}
+
+/**
+ * Immediately silence the current playback (stop audio output) but keep
+ * the soundRef alive so we can still check player state. Used when
+ * switching songs so the user doesn't hear the old song during URL resolution.
+ */
+export async function fadeOutAndPause(): Promise<void> {
+  if (soundRef) {
+    try {
+      await soundRef.stopAsync();
+    } catch {}
+  }
 }

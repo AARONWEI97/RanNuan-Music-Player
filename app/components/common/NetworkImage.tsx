@@ -1,11 +1,11 @@
 import React from 'react';
-import { View, Text, ImageStyle, StyleSheet } from 'react-native';
+import { View, Text, ViewStyle, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { LightColors } from '../../theme/colors';
 
 interface NetworkImageProps {
   uri?: string | null;
-  style?: ImageStyle;
+  style?: ViewStyle;
   placeholder?: React.ReactNode;
   onError?: () => void;
 }
@@ -26,7 +26,7 @@ export default function NetworkImage({ uri, style, placeholder, onError }: Netwo
   );
 }
 
-function DefaultPlaceholder({ style }: { style?: ImageStyle }) {
+function DefaultPlaceholder({ style }: { style?: ViewStyle }) {
   return (
     <View style={[styles.placeholder, style]}>
       <Text style={styles.placeholderIcon}>♪</Text>

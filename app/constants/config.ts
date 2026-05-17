@@ -1,6 +1,6 @@
 export const APP_NAME = 'Alger Music';
 export const APP_VERSION = '1.0.0';
-export const DEFAULT_API_URL = 'http://192.168.1.6:3000';
+export const DEFAULT_API_URL = 'http://192.168.1.203:3000';
 export const DEFAULT_MUSIC_QUALITY = 'exhigh';
 export const MAX_PLAY_HISTORY = 200;
 export const MAX_PLAYLIST_HISTORY = 50;
@@ -8,7 +8,6 @@ export const MAX_ALBUM_HISTORY = 50;
 export const PLAY_MODE_SEQUENTIAL = 0;
 export const PLAY_MODE_LOOP = 1;
 export const PLAY_MODE_SHUFFLE = 2;
-export const PLAY_MODE_INTELLIGENCE = 3;
 export const SEARCH_TYPE_SONG = 1;
 export const SEARCH_TYPE_ALBUM = 10;
 export const SEARCH_TYPE_ARTIST = 100;

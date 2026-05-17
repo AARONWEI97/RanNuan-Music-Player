@@ -26,6 +26,8 @@ const THEME_OPTIONS = [
   { label: '浅色', value: 'light' as const, icon: 'white-balance-sunny' as const },
   { label: '深色', value: 'dark' as const, icon: 'moon-waning-crescent' as const },
   { label: '跟随系统', value: 'system' as const, icon: 'theme-light-dark' as const },
+  { label: '🐶暖阳', value: 'dog-light' as const, icon: 'dog' as const },
+  { label: '🐶夜汪', value: 'dog-dark' as const, icon: 'dog-side' as const },
 ];
 
 const LANGUAGE_OPTIONS = [
@@ -405,6 +407,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   },
   selectorContainer: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     borderRadius: BorderRadius.md,
     padding: 2,
   },

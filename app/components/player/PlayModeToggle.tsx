@@ -6,20 +6,18 @@ import { usePlaylistStore } from '../../store/playlistStore';
 import { useAppTheme } from '../../theme/ThemeContext';
 import { Spacing, BorderRadius } from '../../theme/spacing';
 import { Typography } from '../../theme/typography';
-import { PLAY_MODE_SEQUENTIAL, PLAY_MODE_LOOP, PLAY_MODE_SHUFFLE, PLAY_MODE_INTELLIGENCE } from '../../constants/config';
+import { PLAY_MODE_SEQUENTIAL, PLAY_MODE_LOOP, PLAY_MODE_SHUFFLE } from '../../constants/config';
 
 const PLAY_MODE_ICONS: Record<number, React.ComponentProps<typeof MaterialCommunityIcons>['name']> = {
   [PLAY_MODE_SEQUENTIAL]: 'repeat',
   [PLAY_MODE_LOOP]: 'repeat-once',
   [PLAY_MODE_SHUFFLE]: 'shuffle',
-  [PLAY_MODE_INTELLIGENCE]: 'head-heart',
 };
 
 const PLAY_MODE_LABELS: Record<number, string> = {
   [PLAY_MODE_SEQUENTIAL]: '顺序',
   [PLAY_MODE_LOOP]: '单曲',
   [PLAY_MODE_SHUFFLE]: '随机',
-  [PLAY_MODE_INTELLIGENCE]: '心动',
 };
 
 interface PlayModeToggleProps {

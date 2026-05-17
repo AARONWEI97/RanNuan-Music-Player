@@ -6,6 +6,7 @@ import type { SongResult } from '../types';
 
 interface PlayerState {
   isPlay: boolean;
+  isLoading: boolean;
   playMusic: SongResult | null;
   playMusicUrl: string;
   volume: number;
@@ -17,6 +18,7 @@ interface PlayerState {
 
 interface PlayerActions {
   setIsPlay: (value: boolean) => void;
+  setIsLoading: (value: boolean) => void;
   setPlayMusic: (music: SongResult | null) => void;
   setPlayMusicUrl: (url: string) => void;
   setVolume: (volume: number) => void;
@@ -31,6 +33,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>()(
   persist(
     (set, get) => ({
       isPlay: false,
+      isLoading: false,
       playMusic: null,
       playMusicUrl: '',
       volume: 1,
@@ -40,6 +43,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>()(
       duration: 0,
 
       setIsPlay: (value) => set({ isPlay: value }),
+      setIsLoading: (value) => set({ isLoading: value }),
       setPlayMusic: (music) => set({ playMusic: music }),
       setPlayMusicUrl: (url) => set({ playMusicUrl: url }),
       setVolume: (volume) => {

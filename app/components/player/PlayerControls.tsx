@@ -6,13 +6,12 @@ import { Spacing } from '../../theme/spacing';
 import { usePlayerStore } from '../../store/playerStore';
 import { usePlaylistStore } from '../../store/playlistStore';
 import { usePlayer } from '../../hooks/usePlayer';
-import { PLAY_MODE_SEQUENTIAL, PLAY_MODE_LOOP, PLAY_MODE_SHUFFLE, PLAY_MODE_INTELLIGENCE } from '../../constants/config';
+import { PLAY_MODE_SEQUENTIAL, PLAY_MODE_LOOP, PLAY_MODE_SHUFFLE } from '../../constants/config';
 
 const PLAY_MODE_ICONS: Record<number, React.ComponentProps<typeof MaterialCommunityIcons>['name']> = {
   [PLAY_MODE_SEQUENTIAL]: 'repeat',
   [PLAY_MODE_LOOP]: 'repeat-once',
   [PLAY_MODE_SHUFFLE]: 'shuffle',
-  [PLAY_MODE_INTELLIGENCE]: 'head-heart',
 };
 
 export default function PlayerControls() {

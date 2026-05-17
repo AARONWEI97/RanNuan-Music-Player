@@ -197,6 +197,8 @@ export default function LoginScreen() {
       const profile = res?.data?.profile;
 
       if (profile) {
+        // UID login has no cookie — store a placeholder so checkLoginStatus can detect it
+        await AsyncStorage.setItem(TOKEN_KEY, `uid:${uid.trim()}`);
         setUser({
           userId: profile.userId || uid,
           nickname: profile.nickname,
@@ -206,6 +208,10 @@ export default function LoginScreen() {
           profile,
         });
         setLoginType('uid');
+        Alert.alert(
+          '提示',
+          'UID 登录仅可查看公开信息，无法使用每日推荐、听歌排行等需要登录权限的功能。如需完整功能，请使用扫码或手机号登录。',
+        );
         navigation.goBack();
       } else {
         Alert.alert('登录失败', '未找到该用户');

@@ -2,7 +2,7 @@ import axios, { InternalAxiosRequestConfig } from 'axios';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const DEFAULT_API_BASE_URL = 'http://192.168.1.6:3000';
+const DEFAULT_API_BASE_URL = 'http://192.168.1.203:3000';
 
 interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
   retryCount?: number;
@@ -41,18 +41,22 @@ request.interceptors.request.use(
     config.params = {
       ...config.params,
       timestamp: Date.now(),
-      device: 'mobile',
+      device: 'pc',
     };
 
     try {
       const token = await AsyncStorage.getItem(TOKEN_KEY);
-      if (token && config.method !== 'post') {
-        config.params.cookie = config.params.cookie !== undefined ? config.params.cookie : token;
-      } else if (token && config.method === 'post') {
-        config.data = {
-          ...config.data,
-          cookie: token,
-        };
+      if (token && !token.startsWith('uid:')) {
+        // Append 'os=pc' to cookie — tells Netease API to return full (non-trial) song URLs
+        const cookieWithOs = `${token} os=pc;`;
+        if (config.method !== 'post') {
+          config.params.cookie = config.params.cookie !== undefined ? config.params.cookie : cookieWithOs;
+        } else if (config.method === 'post') {
+          config.data = {
+            ...config.data,
+            cookie: cookieWithOs,
+          };
+        }
       }
     } catch (e) {
       // AsyncStorage 在 Web 端可能不可用，忽略 token 读取失败

@@ -22,7 +22,7 @@ import { useDownload } from '../hooks/useDownload';
 import { useAppTheme } from '../theme/ThemeContext';
 import LyricView from '../components/lyric/LyricView';
 import PlaylistDrawer from '../components/player/PlaylistDrawer';
-import { PLAY_MODE_SEQUENTIAL, PLAY_MODE_LOOP, PLAY_MODE_SHUFFLE, PLAY_MODE_INTELLIGENCE } from '../constants/config';
+import { PLAY_MODE_SEQUENTIAL, PLAY_MODE_LOOP, PLAY_MODE_SHUFFLE } from '../constants/config';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const ALBUM_SIZE = SCREEN_WIDTH * 0.68;
@@ -31,7 +31,6 @@ const PLAY_MODE_ICONS: Record<number, React.ComponentProps<typeof MaterialCommun
   [PLAY_MODE_SEQUENTIAL]: 'repeat',
   [PLAY_MODE_LOOP]: 'repeat-once',
   [PLAY_MODE_SHUFFLE]: 'shuffle',
-  [PLAY_MODE_INTELLIGENCE]: 'head-heart',
 };
 
 function formatTime(seconds: number): string {

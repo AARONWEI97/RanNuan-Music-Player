@@ -1,7 +1,7 @@
-import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import React, { useRef, useCallback, useState, useEffect } from 'react';
+import { View, StyleSheet, Image } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { NavigationContainer, useNavigation } from '@react-navigation/native';
+import { NavigationContainer, useNavigation, NavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,6 +14,8 @@ import PlayerScreen from '../screens/PlayerScreen';
 import PlaylistDetailScreen from '../screens/PlaylistDetailScreen';
 import ArtistDetailScreen from '../screens/ArtistDetailScreen';
 import AlbumDetailScreen from '../screens/AlbumDetailScreen';
+import ToplistScreen from '../screens/ToplistScreen';
+import MvScreen from '../screens/MvScreen';
 import LoginScreen from '../screens/LoginScreen';
 import DownloadScreen from '../screens/DownloadScreen';
 import MiniPlayer from '../components/player/MiniPlayer';
@@ -22,6 +24,16 @@ import { useAppTheme } from '../theme/ThemeContext';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
+
+// 递归获取路由栈中最顶层的路由名
+function getDeepRouteName(state: any): string {
+  if (!state || !state.routes) return '';
+  const current = state.routes[state.index];
+  if (current?.state) {
+    return getDeepRouteName(current.state);
+  }
+  return current?.name || '';
+}
 
 function MiniPlayerWithNavigation() {
   const navigation = useNavigation();
@@ -35,16 +47,39 @@ function MiniPlayerWithNavigation() {
   );
 }
 
+// Dog theme tab icons
+const DOG_TAB_ICONS: Record<string, any> = {
+  Home: require('../../assets/dog-theme/tab_home.png'),
+  Search: require('../../assets/dog-theme/tab_search.png'),
+  User: require('../../assets/dog-theme/tab_user.png'),
+  Settings: require('../../assets/dog-theme/tab_settings.png'),
+};
+
 function MainTabs() {
-  const { colors } = useAppTheme();
-  const playMusic = usePlayerStore((s) => s.playMusic);
+  const { colors, isDog } = useAppTheme();
   const insets = useSafeAreaInsets();
 
-  // 底部安全区域：全面屏手势手机有 home indicator 区域，
-  // 虚拟按键手机无需额外 padding（系统导航栏已占空间）。
-  // 确保至少保留 4px 的基础内边距。
   const bottomPadding = Math.max(insets.bottom, 4);
   const tabBarHeight = 52 + bottomPadding;
+
+  const renderTabIcon = (name: string, defaultIcon: string) => {
+    return ({ color, size, focused }: { color: string; size: number; focused: boolean }) => {
+      if (isDog) {
+        return (
+          <Image
+            source={DOG_TAB_ICONS[name]}
+            style={{
+              width: size + 2,
+              height: size + 2,
+              opacity: focused ? 1 : 0.5,
+            }}
+            resizeMode="contain"
+          />
+        );
+      }
+      return <MaterialCommunityIcons name={defaultIcon as any} size={size} color={color} />;
+    };
+  };
 
   return (
     <View style={styles.tabContainer}>
@@ -71,9 +106,7 @@ function MainTabs() {
           component={HomeScreen}
           options={{
             tabBarLabel: '首页',
-            tabBarIcon: ({ color, size }) => (
-              <MaterialCommunityIcons name="home-variant" size={size} color={color} />
-            ),
+            tabBarIcon: renderTabIcon('Home', 'home-variant'),
           }}
         />
         <Tab.Screen
@@ -81,9 +114,7 @@ function MainTabs() {
           component={SearchScreen}
           options={{
             tabBarLabel: '搜索',
-            tabBarIcon: ({ color, size }) => (
-              <MaterialCommunityIcons name="magnify" size={size} color={color} />
-            ),
+            tabBarIcon: renderTabIcon('Search', 'magnify'),
           }}
         />
         <Tab.Screen
@@ -91,9 +122,7 @@ function MainTabs() {
           component={UserScreen}
           options={{
             tabBarLabel: '我的',
-            tabBarIcon: ({ color, size }) => (
-              <MaterialCommunityIcons name="account-circle-outline" size={size} color={color} />
-            ),
+            tabBarIcon: renderTabIcon('User', 'account-circle-outline'),
           }}
         />
         <Tab.Screen
@@ -101,45 +130,106 @@ function MainTabs() {
           component={SettingsScreen}
           options={{
             tabBarLabel: '设置',
-            tabBarIcon: ({ color, size }) => (
-              <MaterialCommunityIcons name="cog-outline" size={size} color={color} />
-            ),
+            tabBarIcon: renderTabIcon('Settings', 'cog-outline'),
           }}
         />
       </Tab.Navigator>
-      {playMusic && (
-        <View style={[styles.miniPlayerContainer, { bottom: tabBarHeight }]}>
-          <MiniPlayerWithNavigation />
-        </View>
-      )}
     </View>
   );
 }
 
-export default function AppNavigator() {
+function GlobalMiniPlayer({ currentRouteName }: { currentRouteName: string }) {
+  const playMusic = usePlayerStore((s) => s.playMusic);
+  const insets = useSafeAreaInsets();
+
+  if (!playMusic) {
+    return null;
+  }
+
+  // 全屏播放器页面不显示 MiniPlayer
+  if (currentRouteName === 'Player') {
+    return null;
+  }
+
+  // 在 Tab 页面时，MiniPlayer 在 TabBar 上方；在其他子页面时，在底部安全区域上方
+  const isTabRoute = ['Home', 'Search', 'User', 'Settings'].includes(currentRouteName);
+  const bottomPadding = Math.max(insets.bottom, 4);
+  const tabBarHeight = 52 + bottomPadding;
+  const bottomOffset = isTabRoute ? tabBarHeight : bottomPadding;
+
   return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="MainTabs" component={MainTabs} />
-        <Stack.Screen name="Player" component={PlayerScreen} options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-        <Stack.Screen name="PlaylistDetail" component={PlaylistDetailScreen as any} />
-        <Stack.Screen name="ArtistDetail" component={ArtistDetailScreen as any} />
-        <Stack.Screen name="AlbumDetail" component={AlbumDetailScreen as any} />
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="Download" component={DownloadScreen} />
-      </Stack.Navigator>
+    <View style={[styles.globalMiniPlayerContainer, { bottom: bottomOffset }]}>
+      <MiniPlayerWithNavigation />
+    </View>
+  );
+}
+
+// Common stack screen options for smooth animations
+const stackScreenOptions = {
+  headerShown: false,
+  animation: 'slide_from_right' as const,
+  gestureEnabled: true,
+  fullScreenGestureEnabled: true,
+};
+
+export default function AppNavigator() {
+  const navRef = useRef<NavigationContainerRef<ReactNavigation.RootParamList>>(null);
+  const [currentRouteName, setCurrentRouteName] = useState('');
+
+  const handleStateChange = useCallback(() => {
+    const state = navRef.current?.getRootState();
+    if (state) {
+      setCurrentRouteName(getDeepRouteName(state));
+    }
+  }, []);
+
+  // 初始化时获取一次路由名
+  useEffect(() => {
+    const state = navRef.current?.getRootState();
+    if (state) {
+      setCurrentRouteName(getDeepRouteName(state));
+    }
+  }, []);
+
+  return (
+    <NavigationContainer ref={navRef} onStateChange={handleStateChange}>
+      <View style={styles.rootContainer}>
+        <Stack.Navigator screenOptions={stackScreenOptions}>
+          <Stack.Screen name="MainTabs" component={MainTabs} options={{ animation: 'none' }} />
+          <Stack.Screen
+            name="Player"
+            component={PlayerScreen}
+            options={{
+              presentation: 'modal',
+              animation: 'slide_from_bottom',
+              gestureEnabled: true,
+            }}
+          />
+          <Stack.Screen name="PlaylistDetail" component={PlaylistDetailScreen as any} options={{ headerShown: false }} />
+          <Stack.Screen name="ArtistDetail" component={ArtistDetailScreen as any} options={{ headerShown: false }} />
+          <Stack.Screen name="AlbumDetail" component={AlbumDetailScreen as any} options={{ headerShown: false }} />
+          <Stack.Screen name="Toplist" component={ToplistScreen} />
+          <Stack.Screen name="MvList" component={MvScreen} />
+          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="Download" component={DownloadScreen} />
+        </Stack.Navigator>
+        <GlobalMiniPlayer currentRouteName={currentRouteName} />
+      </View>
     </NavigationContainer>
   );
 }
 
 const styles = StyleSheet.create({
+  rootContainer: {
+    flex: 1,
+  },
   tabContainer: {
     flex: 1,
   },
-  miniPlayerContainer: {
+  globalMiniPlayerContainer: {
     position: 'absolute',
-    left: 0,
-    right: 0,
+    left: 10,
+    right: 10,
     zIndex: 10,
   },
 });
