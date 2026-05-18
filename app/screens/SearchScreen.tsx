@@ -91,6 +91,21 @@ export default function SearchScreen() {
     loadSearchHistory();
   }, []);
 
+  // Auto-search from deep link (e.g. 歌单广场 / 新碟上架)
+  useEffect(() => {
+    const stored = searchStore.searchValue;
+    if (stored && stored.trim()) {
+      setKeyword(stored);
+      setIsSearching(true);
+      if (inputRef.current) {
+        inputRef.current.setNativeProps({ text: stored });
+      }
+      search(stored, SEARCH_TYPE_SONG);
+      // Clear after consuming
+      searchStore.setSearchValue('');
+    }
+  }, [searchStore.searchValue]);
+
   const loadSearchHistory = useCallback(async () => {
     try {
       const stored = searchStore.searchValue;

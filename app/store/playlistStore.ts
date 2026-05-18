@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import type { SongResult } from '../types';
 import { usePlayerStore } from './playerStore';
+import { stopPlayback } from '../services/trackPlayerService';
 
 type MinifiedSong = Pick<SongResult, 'id' | 'name' | 'picUrl' | 'dt' | 'duration' | 'source'> & {
   ar: { id: number; name: string }[] | undefined;
@@ -36,6 +37,7 @@ interface PlaylistActions {
   removeFromPlayList: (id: number | string) => void;
   clearPlayAll: () => void;
   togglePlayMode: () => void;
+  setPlayMode: (mode: number) => void;
   nextPlay: () => void;
   prevPlay: () => void;
   setPlayListIndex: (index: number) => void;
@@ -100,33 +102,38 @@ export const usePlaylistStore = create<PlaylistState & PlaylistActions>()(
       },
 
       clearPlayAll: () => {
-        usePlayerStore.setState({ playMusic: null, playMusicUrl: '', isPlay: false });
+        stopPlayback();
+        usePlayerStore.setState({ playMusic: null, playMusicUrl: '', isPlay: false, currentProgress: 0, duration: 0 });
         set({ playList: [], playListIndex: 0 });
       },
 
       togglePlayMode: () => {
         const { playMode } = get();
-        set({ playMode: (playMode + 1) % 4 });
+        set({ playMode: (playMode + 1) % 3 });
+      },
+      setPlayMode: (mode: number) => {
+        set({ playMode: mode });
       },
 
       nextPlay: () => {
         const { playList, playListIndex, playMode } = get();
         if (playList.length === 0) return;
 
+        // 顺序模式：到末尾停止，不循环
         if (playMode === 0 && playListIndex >= playList.length - 1) {
           return;
         }
 
         let nextIndex: number;
         if (playMode === 2) {
+          // 随机模式
           nextIndex = Math.floor(Math.random() * playList.length);
         } else {
+          // 顺序 / 心动 / 单曲循环（单曲循环在上层处理，这里不会走到）
           nextIndex = (playListIndex + 1) % playList.length;
         }
 
         set({ playListIndex: nextIndex });
-        // 不再在这里设置 playMusic/isPlay，由 usePlayer.playSong 统一处理
-        // 这样避免了 store 和音频播放的双重更新导致的状态不一致
       },
 
       prevPlay: () => {

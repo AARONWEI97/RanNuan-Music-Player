@@ -2,7 +2,7 @@ import axios, { InternalAxiosRequestConfig } from 'axios';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const DEFAULT_API_BASE_URL = 'http://192.168.1.6:3000';
+const DEFAULT_API_BASE_URL = 'http://192.168.1.7:3000';
 
 interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
   retryCount?: number;
@@ -41,23 +41,38 @@ request.interceptors.request.use(
     config.params = {
       ...config.params,
       timestamp: Date.now(),
-      device: 'mobile',
+      device: 'pc',
     };
 
     try {
       const token = await AsyncStorage.getItem(TOKEN_KEY);
-      if (token && config.method !== 'post') {
-        config.params.cookie = config.params.cookie !== undefined ? config.params.cookie : token;
-      } else if (token && config.method === 'post') {
-        config.data = {
-          ...config.data,
-          cookie: token,
-        };
+      if (token && !token.startsWith('uid:')) {
+        // Append 'os=pc' to cookie — tells Netease API to return full (non-trial) song URLs
+        const cookieWithOs = `${token} os=pc;`;
+        if (config.method !== 'post') {
+          config.params.cookie = config.params.cookie !== undefined ? config.params.cookie : cookieWithOs;
+        } else if (config.method === 'post') {
+          config.data = {
+            ...config.data,
+            cookie: cookieWithOs,
+          };
+        }
       }
     } catch (e) {
       // AsyncStorage 在 Web 端可能不可用，忽略 token 读取失败
       console.warn('Failed to read auth token:', e);
     }
+
+    // Debug: log full request URL
+    const fullUrl = `${config.baseURL}${config.url}?${new URLSearchParams(
+      Object.entries(config.params || {}).reduce((acc: Record<string, string>, [k, v]) => {
+        if (v !== undefined && v !== null) acc[k] = String(v);
+        return acc;
+      }, {})
+    ).toString()}`;
+    console.log(`[Request] ${config.method?.toUpperCase()} ${config.url}`, 
+      config.data ? `body=${JSON.stringify(config.data).substring(0, 200)}` : '',
+      `\n  Full URL: ${fullUrl.substring(0, 300)}`);
 
     return config;
   },
@@ -67,9 +82,20 @@ request.interceptors.request.use(
 );
 
 request.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log(`[Response] ${response.config.url} status=${response.status} code=${response.data?.code}`);
+    return response;
+  },
   async (error) => {
     const config = error.config as CustomAxiosRequestConfig;
+
+    // Debug: log error details
+    console.error(
+      `[Response Error] ${config?.url}`,
+      `status=${error.response?.status}`,
+      `data=${JSON.stringify(error.response?.data)?.substring(0, 300)}`,
+      `message=${error.message}`
+    );
 
     if (!config) {
       return Promise.reject(error);

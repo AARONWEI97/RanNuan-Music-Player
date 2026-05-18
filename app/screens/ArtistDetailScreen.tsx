@@ -35,7 +35,7 @@ interface ArtistInfo {
   alias: string[];
 }
 
-export default function ArtistDetailScreen({ route }: RootStackScreenProps<'ArtistDetail'>) {
+export default function ArtistDetailScreen({ route, navigation }: RootStackScreenProps<'ArtistDetail'>) {
   const { id } = route.params;
   const insets = useSafeAreaInsets();
   const { colors } = useAppTheme();
@@ -128,6 +128,13 @@ export default function ArtistDetailScreen({ route }: RootStackScreenProps<'Arti
           colors={['transparent', 'rgba(0,0,0,0.7)']}
           style={styles.coverGradient}
         />
+        <TouchableOpacity
+          style={[styles.backButton, { top: insets.top + 8 }]}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons name="arrow-left" size={24} color="#ffffff" />
+        </TouchableOpacity>
         <View style={[styles.coverInfo, { paddingBottom: insets.top > 0 ? Spacing.lg : Spacing.xl }]}>
           <Text style={styles.artistName}>{artist?.name}</Text>
           {aliasText ? (
@@ -248,6 +255,17 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     right: 0,
     bottom: 0,
     height: COVER_HEIGHT * 0.6,
+  },
+  backButton: {
+    position: 'absolute',
+    left: Spacing.md,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
   },
   coverInfo: {
     position: 'absolute',

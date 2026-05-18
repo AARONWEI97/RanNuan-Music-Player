@@ -8,7 +8,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "api": "npx NeteaseCloudMusicApi@latest",
+    "api": "npx NeteaseCloudMusicApi@latest --host 0.0.0.0",
     "dev": "concurrently \"npm run api\" \"expo start\"",
     "dev:web": "concurrently \"npm run api\" \"expo start --web\"",
     "postinstall": "node scripts/patch-zustand.js",

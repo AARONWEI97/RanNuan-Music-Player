@@ -15,6 +15,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { getQrKey, createQr, checkQr, loginByCellphone, loginByUid } from '../api/login';
@@ -26,7 +27,7 @@ import { Spacing, BorderRadius } from '../theme/spacing';
 import { Typography } from '../theme/typography';
 import type { RootStackScreenProps } from '../types';
 
-type LoginMethod = 'qr' | 'phone' | 'uid';
+type LoginMethod = 'qr' | 'phone' | 'uid' | 'cookie';
 
 const QR_POLL_INTERVAL = 3000;
 const QR_EXPIRE_TIME = 300000;
@@ -35,7 +36,6 @@ export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<RootStackScreenProps<'Login'>['navigation']>();
   const { colors } = useAppTheme();
-  const styles = useCallback((c: typeof colors) => createStyles(c), [colors])(colors);
   const setUser = useUserStore((s) => s.setUser);
   const setLoginType = useUserStore((s) => s.setLoginType);
 
@@ -53,6 +53,8 @@ export default function LoginScreen() {
 
   const [uid, setUid] = useState('');
 
+  const [cookie, setCookie] = useState('');
+
   useEffect(() => {
     return () => {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
@@ -60,10 +62,10 @@ export default function LoginScreen() {
     };
   }, []);
 
-  const handleLoginSuccess = useCallback(async (cookie: string, type: 'qr' | 'phone' | 'uid') => {
+  const handleLoginSuccess = useCallback(async (cookieStr: string, type: 'qr' | 'phone' | 'uid' | 'cookie') => {
     try {
-      if (cookie) {
-        await AsyncStorage.setItem(TOKEN_KEY, cookie);
+      if (cookieStr) {
+        await AsyncStorage.setItem(TOKEN_KEY, cookieStr);
       }
 
       const accountRes = await getUserAccount();
@@ -126,8 +128,8 @@ export default function LoginScreen() {
           if (code === 803) {
             if (pollTimerRef.current) clearInterval(pollTimerRef.current);
             if (expireTimerRef.current) clearTimeout(expireTimerRef.current);
-            const cookie = checkRes?.data?.cookie || '';
-            await handleLoginSuccess(cookie, 'qr');
+            const ck = checkRes?.data?.cookie || '';
+            await handleLoginSuccess(ck, 'qr');
           } else if (code === 802) {
             setQrStatus('scanned');
           } else if (code === 800) {
@@ -166,8 +168,8 @@ export default function LoginScreen() {
       const code = res?.data?.code;
 
       if (code === 200) {
-        const cookie = res?.data?.cookie || res?.headers?.['set-cookie']?.[0] || '';
-        await handleLoginSuccess(cookie, 'phone');
+        const ck = res?.data?.cookie || res?.headers?.['set-cookie']?.[0] || '';
+        await handleLoginSuccess(ck, 'phone');
       } else if (code === 502) {
         Alert.alert('登录失败', '手机号或密码错误');
       } else {
@@ -197,6 +199,7 @@ export default function LoginScreen() {
       const profile = res?.data?.profile;
 
       if (profile) {
+        await AsyncStorage.setItem(TOKEN_KEY, `uid:${uid.trim()}`);
         setUser({
           userId: profile.userId || uid,
           nickname: profile.nickname,
@@ -206,6 +209,10 @@ export default function LoginScreen() {
           profile,
         });
         setLoginType('uid');
+        Alert.alert(
+          '提示',
+          'UID 登录仅可查看公开信息，无法使用每日推荐、听歌排行等需要登录权限的功能。如需完整功能，请使用扫码或手机号登录。',
+        );
         navigation.goBack();
       } else {
         Alert.alert('登录失败', '未找到该用户');
@@ -217,56 +224,97 @@ export default function LoginScreen() {
     }
   }, [uid, setUser, setLoginType, navigation]);
 
-  const renderQrLogin = () => (
-    <View style={styles.qrContainer}>
-      <Text style={[styles.qrTitle, { color: colors.text }]}>扫码登录</Text>
-      <Text style={[styles.qrSubtitle, { color: colors.textSecondary }]}>请使用网易云音乐 APP 扫描二维码登录</Text>
+  const handleCookieLogin = useCallback(async () => {
+    if (!cookie.trim()) {
+      Alert.alert('提示', '请输入 Cookie');
+      return;
+    }
 
-      <View style={[styles.qrCodeWrapper, { backgroundColor: colors.card, borderColor: colors.border }]}>
+    setLoading(true);
+    try {
+      await AsyncStorage.setItem(TOKEN_KEY, cookie.trim());
+      const accountRes = await getUserAccount();
+      const profile = accountRes?.data?.profile;
+
+      if (profile) {
+        setUser({
+          userId: profile.userId || accountRes?.data?.account?.id,
+          nickname: profile.nickname,
+          avatarUrl: profile.avatarUrl,
+          backgroundUrl: profile.backgroundUrl,
+          vipType: profile.vipType,
+          profile,
+          account: accountRes?.data?.account,
+        });
+        setLoginType('cookie');
+        navigation.goBack();
+      } else {
+        await AsyncStorage.removeItem(TOKEN_KEY);
+        Alert.alert('登录失败', 'Cookie 无效或已过期');
+      }
+    } catch {
+      await AsyncStorage.removeItem(TOKEN_KEY);
+      Alert.alert('登录失败', 'Cookie 验证失败，请检查格式');
+    } finally {
+      setLoading(false);
+    }
+  }, [cookie, setUser, setLoginType, navigation]);
+
+  // ─── Render Methods ───
+
+  const renderQrLogin = () => (
+    <View style={styles.methodContent}>
+      <Text style={[styles.methodTitle, { color: '#ffffff' }]}>扫码登录</Text>
+      <Text style={styles.methodSubtitle}>请使用网易云音乐 APP 扫描二维码</Text>
+
+      <View style={styles.qrCodeWrapper}>
         {qrStatus === 'loading' && (
           <View style={styles.qrPlaceholder}>
-            <ActivityIndicator size="large" color={colors.primary} />
+            <ActivityIndicator size="large" color="#ffffff" />
           </View>
         )}
         {qrStatus === 'waiting' && qrCodeUrl ? (
           <Image source={{ uri: qrCodeUrl }} style={styles.qrCodeImage} resizeMode="contain" />
         ) : null}
         {qrStatus === 'scanned' && (
-          <View style={[styles.qrOverlay, { backgroundColor: colors.background + 'F0' }]}>
-            <MaterialCommunityIcons name="check-circle" size={48} color={colors.success} />
-            <Text style={[styles.qrScannedText, { color: colors.success }]}>扫描成功</Text>
-            <Text style={[styles.qrScannedSubtext, { color: colors.textSecondary }]}>请在手机上确认登录</Text>
+          <View style={[styles.qrOverlay, { backgroundColor: 'rgba(0,0,0,0.8)' }]}>
+            <MaterialCommunityIcons name="check-circle" size={48} color="#4ade80" />
+            <Text style={styles.qrScannedText}>扫描成功</Text>
+            <Text style={styles.qrScannedSubtext}>请在手机上确认登录</Text>
           </View>
         )}
         {qrStatus === 'expired' && (
-          <View style={[styles.qrOverlay, { backgroundColor: colors.background + 'F0' }]}>
-            <MaterialCommunityIcons name="refresh" size={48} color={colors.textTertiary} />
-            <Text style={[styles.qrExpiredText, { color: colors.textTertiary }]}>二维码已过期</Text>
-            <TouchableOpacity style={[styles.refreshButton, { backgroundColor: colors.primary }]} onPress={generateQrCode}>
+          <View style={[styles.qrOverlay, { backgroundColor: 'rgba(0,0,0,0.8)' }]}>
+            <MaterialCommunityIcons name="refresh" size={48} color="rgba(255,255,255,0.5)" />
+            <Text style={styles.qrExpiredText}>二维码已过期</Text>
+            <TouchableOpacity style={styles.refreshButton} onPress={generateQrCode}>
               <Text style={styles.refreshButtonText}>点击刷新</Text>
             </TouchableOpacity>
           </View>
         )}
       </View>
 
-      <View style={[styles.qrSteps, { backgroundColor: colors.surface }]}>
-        <Text style={[styles.qrStep, { color: colors.textSecondary }]}>1. 打开网易云音乐 APP</Text>
-        <Text style={[styles.qrStep, { color: colors.textSecondary }]}>2. 点击左上角「☰」菜单</Text>
-        <Text style={[styles.qrStep, { color: colors.textSecondary }]}>3. 点击「扫一扫」扫描二维码</Text>
+      <View style={styles.qrSteps}>
+        <Text style={styles.qrStep}>1. 打开网易云音乐 APP</Text>
+        <Text style={styles.qrStep}>2. 点击左上角「☰」菜单</Text>
+        <Text style={styles.qrStep}>3. 点击「扫一扫」扫描二维码</Text>
       </View>
     </View>
   );
 
   const renderPhoneLogin = () => (
-    <View style={styles.formContainer}>
-      <Text style={[styles.formTitle, { color: colors.text }]}>手机号登录</Text>
+    <View style={styles.methodContent}>
+      <Text style={[styles.methodTitle, { color: '#ffffff' }]}>手机号登录</Text>
+      <Text style={styles.methodSubtitle}>使用手机号和密码登录</Text>
 
       <View style={styles.inputGroup}>
-        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>手机号</Text>
+        <View style={styles.inputIconWrap}>
+          <MaterialCommunityIcons name="cellphone" size={18} color="rgba(255,255,255,0.5)" />
+        </View>
         <TextInput
-          style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
+          style={styles.loginInput}
           placeholder="请输入手机号"
-          placeholderTextColor={colors.textTertiary}
+          placeholderTextColor="rgba(255,255,255,0.4)"
           value={phone}
           onChangeText={setPhone}
           keyboardType="phone-pad"
@@ -277,11 +325,13 @@ export default function LoginScreen() {
       </View>
 
       <View style={styles.inputGroup}>
-        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>密码</Text>
+        <View style={styles.inputIconWrap}>
+          <MaterialCommunityIcons name="lock-outline" size={18} color="rgba(255,255,255,0.5)" />
+        </View>
         <TextInput
-          style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
+          style={styles.loginInput}
           placeholder="请输入密码"
-          placeholderTextColor={colors.textTertiary}
+          placeholderTextColor="rgba(255,255,255,0.4)"
           value={password}
           onChangeText={setPassword}
           secureTextEntry
@@ -291,31 +341,29 @@ export default function LoginScreen() {
       </View>
 
       <TouchableOpacity
-        style={[styles.submitButton, { backgroundColor: colors.primary }, loading && styles.submitButtonDisabled]}
+        style={[styles.submitButton, loading && styles.submitButtonDisabled]}
         onPress={handlePhoneLogin}
         disabled={loading}
         activeOpacity={0.8}
       >
-        {loading ? (
-          <ActivityIndicator size="small" color="#ffffff" />
-        ) : (
-          <Text style={styles.submitButtonText}>登录</Text>
-        )}
+        {loading ? <ActivityIndicator size="small" color="#ffffff" /> : <Text style={styles.submitButtonText}>登录</Text>}
       </TouchableOpacity>
     </View>
   );
 
   const renderUidLogin = () => (
-    <View style={styles.formContainer}>
-      <Text style={[styles.formTitle, { color: colors.text }]}>UID 登录</Text>
-      <Text style={[styles.formSubtitle, { color: colors.textSecondary }]}>输入网易云音乐用户 ID 快速登录</Text>
+    <View style={styles.methodContent}>
+      <Text style={[styles.methodTitle, { color: '#ffffff' }]}>UID 登录</Text>
+      <Text style={styles.methodSubtitle}>输入网易云音乐用户 ID 快速登录</Text>
 
       <View style={styles.inputGroup}>
-        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>用户 UID</Text>
+        <View style={styles.inputIconWrap}>
+          <MaterialCommunityIcons name="identifier" size={18} color="rgba(255,255,255,0.5)" />
+        </View>
         <TextInput
-          style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
+          style={styles.loginInput}
           placeholder="请输入 UID"
-          placeholderTextColor={colors.textTertiary}
+          placeholderTextColor="rgba(255,255,255,0.4)"
           value={uid}
           onChangeText={setUid}
           keyboardType="number-pad"
@@ -325,81 +373,133 @@ export default function LoginScreen() {
       </View>
 
       <TouchableOpacity
-        style={[styles.submitButton, { backgroundColor: colors.primary }, loading && styles.submitButtonDisabled]}
+        style={[styles.submitButton, loading && styles.submitButtonDisabled]}
         onPress={handleUidLogin}
         disabled={loading}
         activeOpacity={0.8}
       >
-        {loading ? (
-          <ActivityIndicator size="small" color="#ffffff" />
-        ) : (
-          <Text style={styles.submitButtonText}>登录</Text>
-        )}
+        {loading ? <ActivityIndicator size="small" color="#ffffff" /> : <Text style={styles.submitButtonText}>登录</Text>}
       </TouchableOpacity>
+
+      <Text style={styles.uidTip}>UID 登录仅可查看公开信息，无法使用需要登录权限的功能</Text>
+    </View>
+  );
+
+  const renderCookieLogin = () => (
+    <View style={styles.methodContent}>
+      <Text style={[styles.methodTitle, { color: '#ffffff' }]}>Cookie 登录</Text>
+      <Text style={styles.methodSubtitle}>从浏览器中获取 Cookie 登录</Text>
+
+      <View style={styles.inputGroup}>
+        <View style={[styles.inputIconWrap, { alignItems: 'flex-start', marginTop: 14 }]}>
+          <MaterialCommunityIcons name="cookie-outline" size={18} color="rgba(255,255,255,0.5)" />
+        </View>
+        <TextInput
+          style={[styles.loginInput, styles.cookieInput]}
+          placeholder="请粘贴网易云音乐 Cookie"
+          placeholderTextColor="rgba(255,255,255,0.4)"
+          value={cookie}
+          onChangeText={setCookie}
+          autoCapitalize="none"
+          autoCorrect={false}
+          multiline
+        />
+      </View>
+
+      <TouchableOpacity
+        style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+        onPress={handleCookieLogin}
+        disabled={loading}
+        activeOpacity={0.8}
+      >
+        {loading ? <ActivityIndicator size="small" color="#ffffff" /> : <Text style={styles.submitButtonText}>登录</Text>}
+      </TouchableOpacity>
+
+      <View style={styles.cookieSteps}>
+        <Text style={styles.cookieStepTitle}>获取方式：</Text>
+        <Text style={styles.cookieStep}>1. 在浏览器中登录 music.163.com</Text>
+        <Text style={styles.cookieStep}>2. 按 F12 打开开发者工具</Text>
+        <Text style={styles.cookieStep}>3. 切到 Application → Cookies</Text>
+        <Text style={styles.cookieStep}>4. 复制 MUSIC_U 的值</Text>
+      </View>
     </View>
   );
 
   const LOGIN_METHODS: { key: LoginMethod; label: string; icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'] }[] = [
-    { key: 'qr', label: '扫码登录', icon: 'qrcode-scan' },
+    { key: 'qr', label: '扫码', icon: 'qrcode-scan' },
     { key: 'phone', label: '手机号', icon: 'cellphone' },
+    { key: 'cookie', label: 'Cookie', icon: 'cookie-outline' },
     { key: 'uid', label: 'UID', icon: 'identifier' },
   ];
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={{ paddingTop: insets.top + 20, paddingBottom: insets.bottom + 40 }}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+    <View style={styles.container}>
+      <LinearGradient
+        colors={['#0f766e', '#0d5749', '#0a3d33', '#052e24']}
+        style={StyleSheet.absoluteFill}
+      />
+
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <TouchableOpacity style={[styles.closeButton, { backgroundColor: colors.surface }]} onPress={() => navigation.goBack()}>
-          <MaterialCommunityIcons name="close" size={20} color={colors.textSecondary} />
-        </TouchableOpacity>
+        <ScrollView
+          contentContainerStyle={{ paddingTop: insets.top + 20, paddingBottom: insets.bottom + 40 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Close Button */}
+          <TouchableOpacity style={styles.closeButton} onPress={() => navigation.goBack()}>
+            <MaterialCommunityIcons name="close" size={20} color="rgba(255,255,255,0.7)" />
+          </TouchableOpacity>
 
-        <View style={styles.header}>
-          <MaterialCommunityIcons name="music-note" size={40} color={colors.primary} />
-          <Text style={[styles.appName, { color: colors.primary }]}>Alger Music</Text>
-          <Text style={[styles.appSlogan, { color: colors.textSecondary }]}>登录网易云音乐账号</Text>
-        </View>
+          {/* Header */}
+          <View style={styles.header}>
+            <Image source={require('../../assets/top-logo.png')} style={styles.logoImage} />
+            <Text style={styles.appName}>RanNuan Music</Text>
+            <Text style={styles.appSlogan}>登录网易云音乐账号</Text>
+          </View>
 
-        <View style={[styles.methodTabs, { backgroundColor: colors.surface }]}>
-          {LOGIN_METHODS.map((method) => (
-            <TouchableOpacity
-              key={method.key}
-              style={[styles.methodTab, activeMethod === method.key && { backgroundColor: colors.primary }]}
-              onPress={() => setActiveMethod(method.key)}
-            >
-              <MaterialCommunityIcons
-                name={method.icon}
-                size={14}
-                color={activeMethod === method.key ? '#ffffff' : colors.textSecondary}
-                style={{ marginRight: 4 }}
-              />
-              <Text style={[styles.methodTabText, activeMethod === method.key && styles.methodTabTextActive]}>
-                {method.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+          {/* Login Card */}
+          <View style={styles.loginCard}>
+            {/* Method Tabs */}
+            <View style={styles.methodTabs}>
+              {LOGIN_METHODS.map((method) => (
+                <TouchableOpacity
+                  key={method.key}
+                  style={[styles.methodTab, activeMethod === method.key && styles.methodTabActive]}
+                  onPress={() => setActiveMethod(method.key)}
+                >
+                  <MaterialCommunityIcons
+                    name={method.icon}
+                    size={14}
+                    color={activeMethod === method.key ? '#0f766e' : 'rgba(255,255,255,0.6)'}
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={[styles.methodTabText, activeMethod === method.key && styles.methodTabTextActive]}>
+                    {method.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
-        {activeMethod === 'qr' && renderQrLogin()}
-        {activeMethod === 'phone' && renderPhoneLogin()}
-        {activeMethod === 'uid' && renderUidLogin()}
-      </ScrollView>
-    </KeyboardAvoidingView>
+            {/* Method Content */}
+            {activeMethod === 'qr' && renderQrLogin()}
+            {activeMethod === 'phone' && renderPhoneLogin()}
+            {activeMethod === 'cookie' && renderCookieLogin()}
+            {activeMethod === 'uid' && renderUidLogin()}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
-function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
-  return StyleSheet.create({
+const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  scrollView: {
+  keyboardView: {
     flex: 1,
   },
   closeButton: {
@@ -410,6 +510,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     width: 36,
     height: 36,
     borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -418,21 +519,37 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     paddingHorizontal: Spacing.lg,
     marginBottom: Spacing.xxl,
   },
+  logoImage: {
+    width: 72,
+    height: 72,
+    borderRadius: 18,
+    marginBottom: Spacing.md,
+  },
   appName: {
     ...Typography.h2,
+    color: '#ffffff',
     fontWeight: '700',
     marginBottom: Spacing.xs,
-    marginTop: Spacing.sm,
   },
   appSlogan: {
     ...Typography.body2,
+    color: 'rgba(255,255,255,0.7)',
+  },
+
+  // ─── Login Card ───
+  loginCard: {
+    marginHorizontal: Spacing.lg,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: BorderRadius.xl,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   methodTabs: {
     flexDirection: 'row',
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.xl,
-    borderRadius: BorderRadius.xxl,
     padding: 3,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
   },
   methodTab: {
     flex: 1,
@@ -440,68 +557,79 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.xxl,
+    borderRadius: BorderRadius.lg,
+  },
+  methodTabActive: {
+    backgroundColor: 'rgba(255,255,255,0.9)',
   },
   methodTabText: {
     ...Typography.caption,
-    color: colors.textSecondary,
+    color: 'rgba(255,255,255,0.6)',
     fontWeight: '500',
   },
   methodTabTextActive: {
-    color: '#ffffff',
+    color: '#0f766e',
     fontWeight: '600',
   },
-  qrContainer: {
+
+  // ─── Method Content ───
+  methodContent: {
+    padding: Spacing.xl,
     alignItems: 'center',
-    paddingHorizontal: Spacing.lg,
   },
-  qrTitle: {
+  methodTitle: {
     ...Typography.h3,
     fontWeight: '600',
     marginBottom: Spacing.xs,
   },
-  qrSubtitle: {
-    ...Typography.body2,
+  methodSubtitle: {
+    ...Typography.caption,
+    color: 'rgba(255,255,255,0.5)',
     marginBottom: Spacing.xl,
   },
+
+  // ─── QR Login ───
   qrCodeWrapper: {
-    width: 200,
-    height: 200,
+    width: 180,
+    height: 180,
     borderRadius: BorderRadius.lg,
+    backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    marginBottom: Spacing.xl,
-    borderWidth: 1,
+    marginBottom: Spacing.lg,
   },
   qrPlaceholder: {
-    width: 200,
-    height: 200,
+    width: 180,
+    height: 180,
     alignItems: 'center',
     justifyContent: 'center',
   },
   qrCodeImage: {
-    width: 200,
-    height: 200,
+    width: 180,
+    height: 180,
   },
   qrOverlay: {
-    width: 200,
-    height: 200,
+    width: 180,
+    height: 180,
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
   },
   qrScannedText: {
     ...Typography.body2,
+    color: '#4ade80',
     fontWeight: '600',
     marginTop: Spacing.sm,
   },
   qrScannedSubtext: {
     ...Typography.caption,
+    color: 'rgba(255,255,255,0.6)',
     marginTop: Spacing.xs,
   },
   qrExpiredText: {
     ...Typography.body2,
+    color: 'rgba(255,255,255,0.5)',
     marginBottom: Spacing.md,
     marginTop: Spacing.sm,
   },
@@ -509,6 +637,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.xxl,
+    backgroundColor: 'rgba(255,255,255,0.2)',
   },
   refreshButtonText: {
     ...Typography.caption,
@@ -517,48 +646,55 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   },
   qrSteps: {
     width: '100%',
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
   },
   qrStep: {
-    ...Typography.body2,
-    marginBottom: Spacing.sm,
-    lineHeight: 22,
-  },
-  formContainer: {
-    paddingHorizontal: Spacing.lg,
-  },
-  formTitle: {
-    ...Typography.h3,
-    fontWeight: '600',
-    marginBottom: Spacing.xs,
-  },
-  formSubtitle: {
-    ...Typography.body2,
-    marginBottom: Spacing.xl,
-  },
-  inputGroup: {
-    marginBottom: Spacing.lg,
-  },
-  inputLabel: {
     ...Typography.caption,
-    marginBottom: Spacing.xs,
-    fontWeight: '500',
+    color: 'rgba(255,255,255,0.5)',
+    marginBottom: Spacing.sm,
+    lineHeight: 18,
   },
-  input: {
+
+  // ─── Form Inputs ───
+  inputGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: BorderRadius.lg,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    ...Typography.body2,
+    marginBottom: Spacing.md,
     borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  inputIconWrap: {
+    width: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loginInput: {
+    flex: 1,
+    ...Typography.body2,
+    color: '#ffffff',
+    paddingVertical: Spacing.md,
+    paddingRight: Spacing.lg,
+  },
+  cookieInput: {
+    minHeight: 80,
+    maxHeight: 120,
+    textAlignVertical: 'top',
   },
   submitButton: {
+    width: '100%',
     borderRadius: BorderRadius.xxl,
     paddingVertical: Spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: Spacing.md,
     height: 48,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
   submitButtonDisabled: {
     opacity: 0.6,
@@ -568,5 +704,31 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     color: '#ffffff',
     fontWeight: '600',
   },
-  });
-}
+  uidTip: {
+    ...Typography.overline,
+    color: 'rgba(255,255,255,0.35)',
+    marginTop: Spacing.md,
+    textAlign: 'center',
+  },
+
+  // ─── Cookie Steps ───
+  cookieSteps: {
+    width: '100%',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    marginTop: Spacing.lg,
+  },
+  cookieStepTitle: {
+    ...Typography.caption,
+    color: 'rgba(255,255,255,0.6)',
+    fontWeight: '600',
+    marginBottom: Spacing.xs,
+  },
+  cookieStep: {
+    ...Typography.overline,
+    color: 'rgba(255,255,255,0.4)',
+    marginBottom: Spacing.xs,
+    lineHeight: 16,
+  },
+});

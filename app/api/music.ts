@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { SongResult, ApiLyric } from '../types';
 import request, { TOKEN_KEY } from './request';
+import { useSettingsStore } from '../store/settingsStore';
 
 export const fmTrash = (id: number) => {
   return request.post('/fm_trash', null, {
@@ -14,15 +15,19 @@ export const getMusicQualityDetail = (id: number) => {
 
 export const getMusicUrl = async (id: number, isDownloaded: boolean = false) => {
   const token = await AsyncStorage.getItem(TOKEN_KEY);
+  // Read user's music quality setting
+  const musicQuality = useSettingsStore.getState().musicQuality || 'higher';
+  const encodeType = musicQuality === 'lossless' ? 'aac' : 'flac';
+  const cookieWithOs = token && !token.startsWith('uid:') ? `${token} os=pc;` : undefined;
 
-  if (isDownloaded && token) {
+  if (isDownloaded && token && !token.startsWith('uid:')) {
     try {
       const url = '/song/download/url/v1';
       const res = await request.get(url, {
         params: {
           id,
-          level: 'higher',
-          encodeType: 'flac',
+          level: musicQuality,
+          encodeType,
           cookie: `${token} os=pc;`
         }
       });
@@ -38,8 +43,9 @@ export const getMusicUrl = async (id: number, isDownloaded: boolean = false) => 
   return await request.get('/song/url/v1', {
     params: {
       id,
-      level: 'higher',
-      encodeType: 'flac'
+      level: musicQuality,
+      encodeType,
+      ...(cookieWithOs ? { cookie: cookieWithOs } : {}),
     }
   });
 };
@@ -57,11 +63,15 @@ export const getParsingMusicUrl = async (
   id: number,
   data: SongResult
 ): Promise<any> => {
+  const token = await AsyncStorage.getItem(TOKEN_KEY);
+  const musicQuality = useSettingsStore.getState().musicQuality || 'higher';
+  const cookieWithOs = token && !token.startsWith('uid:') ? `${token} os=pc;` : undefined;
   return await request.get('/song/url/v1', {
     params: {
       id,
-      level: 'higher',
-      encodeType: 'flac'
+      level: musicQuality,
+      encodeType: musicQuality === 'lossless' ? 'aac' : 'flac',
+      ...(cookieWithOs ? { cookie: cookieWithOs } : {}),
     }
   });
 };

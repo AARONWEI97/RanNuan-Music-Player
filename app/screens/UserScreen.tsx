@@ -1,7 +1,9 @@
-import React, { useCallback, useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
+  FlatList,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,27 +11,28 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { useUserStore } from '../store/userStore';
 import { usePlayHistoryStore } from '../store/playHistoryStore';
-import { usePlayerStore } from '../store/playerStore';
 import { useAppTheme } from '../theme/ThemeContext';
+import { usePlayer } from '../hooks/usePlayer';
 import { Spacing, BorderRadius } from '../theme/spacing';
 import { Typography } from '../theme/typography';
 import { formatPlayCount } from '../utils/format';
+import { getUserDetail, getUserRecord, getUserAlbumSublist } from '../api/user';
+import { deletePlaylist } from '../api/playlist';
 import type { RootStackScreenProps } from '../types';
+import type { SongResult } from '../types';
 import NetworkImage from '../components/common/NetworkImage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const HERO_HEIGHT = 240;
+const ALBUM_CARD_SIZE = (SCREEN_WIDTH - 64) / 3;
 
-const MENU_ITEMS = [
-  { key: 'favorite', icon: 'heart-outline' as const, label: '我喜欢的音乐', activeIcon: 'heart' as const },
-  { key: 'download', icon: 'download-outline' as const, label: '本地/下载', activeIcon: 'download' as const },
-  { key: 'recent', icon: 'history' as const, label: '最近播放', activeIcon: 'history' as const },
-  { key: 'radio', icon: 'radio' as const, label: '我的电台', activeIcon: 'radio' as const },
-];
+type PlaylistTab = 'created' | 'collected' | 'album';
 
 export default function UserScreen() {
   const { colors } = useAppTheme();
@@ -43,110 +46,494 @@ export default function UserScreen() {
   const fetchUserPlaylists = useUserStore((s) => s.fetchUserPlaylists);
   const checkLoginStatus = useUserStore((s) => s.checkLoginStatus);
   const musicHistory = usePlayHistoryStore((s) => s.musicHistory);
-  const playMusic = usePlayerStore((s) => s.playMusic);
+  const { playSong } = usePlayer();
 
-  useEffect(() => {
-    if (user) {
-      fetchUserPlaylists();
-    }
-  }, [user?.userId]);
+  const scrollViewRef = React.useRef<ScrollView>(null);
+  const [recordSectionY, setRecordSectionY] = useState(0);
 
+  const [playlistTab, setPlaylistTab] = useState<PlaylistTab>('created');
+  const [userLevel, setUserLevel] = useState<number>(0);
+  const [followedCount, setFollowedCount] = useState<number>(0);
+  const [followCount, setFollowCount] = useState<number>(0);
+  const [recordSongs, setRecordSongs] = useState<any[]>([]);
+  const [recordLoading, setRecordLoading] = useState(false);
+
+  // Album list
+  const [albumList, setAlbumList] = useState<any[]>([]);
+  const [albumLoading, setAlbumLoading] = useState(false);
+
+  const profile = user as any;
+  const nickname = profile?.nickname || profile?.profile?.nickname || '用户';
+  const avatarUrl = profile?.avatarUrl || profile?.profile?.avatarUrl;
+  const backgroundUrl = profile?.backgroundUrl || profile?.profile?.backgroundUrl;
+  const signature = profile?.profile?.signature || profile?.signature || '';
+  const followeds = followedCount || profile?.profile?.followeds || profile?.followeds || 0;
+  const follows = followCount || profile?.profile?.follows || profile?.follows || 0;
+
+  const loginType = useUserStore((s) => s.loginType);
+  const isUidLogin = loginType === 'uid';
+
+  // Separate playlists into created and collected
+  const createdPlaylists = useMemo(() => {
+    if (!user?.userId) return playlists;
+    return playlists.filter((p) => {
+      const isCreator = p.creator?.nickname === nickname || !p.subscribed;
+      return isCreator;
+    });
+  }, [playlists, user?.userId, nickname]);
+
+  const collectedPlaylists = useMemo(() => {
+    return playlists.filter((p) => p.subscribed);
+  }, [playlists]);
+
+  const displayPlaylists = playlistTab === 'created' ? createdPlaylists : playlistTab === 'collected' ? collectedPlaylists : [];
+
+  // Initial login check
   useEffect(() => {
     checkLoginStatus();
   }, []);
+
+  // Refresh playlists whenever the screen gains focus (e.g., returning from PlaylistImport)
+  useFocusEffect(
+    useCallback(() => {
+      if (user?.userId) {
+        fetchUserPlaylists();
+        if (!isUidLogin) {
+          getUserDetail(user.userId).then((res) => {
+            const level = res?.data?.level;
+            if (level) setUserLevel(level);
+            const profile = res?.data?.profile;
+            if (profile) {
+              if (profile.followeds !== undefined) setFollowedCount(profile.followeds);
+              if (profile.follows !== undefined) setFollowCount(profile.follows);
+            }
+          }).catch(() => {});
+        }
+      }
+    }, [user?.userId, isUidLogin, fetchUserPlaylists])
+  );
+
+  // Fetch listening records
+  useEffect(() => {
+    if (user?.userId && !isUidLogin) {
+      setRecordLoading(true);
+      getUserRecord(user.userId, 0).then((res) => {
+        const data = res?.data?.allData || res?.data?.weekData;
+        if (Array.isArray(data)) {
+          setRecordSongs(data.slice(0, 10));
+        }
+      }).catch(() => {}).finally(() => setRecordLoading(false));
+    }
+  }, [user?.userId, isUidLogin]);
+
+  // Fetch album list when tab switches to album
+  useEffect(() => {
+    if (playlistTab === 'album' && albumList.length === 0 && user && !isUidLogin) {
+      setAlbumLoading(true);
+      getUserAlbumSublist({ limit: 100, offset: 0 }).then((res) => {
+        const data = res?.data?.data;
+        if (Array.isArray(data)) {
+          setAlbumList(data);
+        }
+      }).catch(() => {}).finally(() => setAlbumLoading(false));
+    }
+  }, [playlistTab, user, isUidLogin]);
 
   const handleLogin = useCallback(() => {
     navigation.navigate('Login');
   }, [navigation]);
 
-  const handleMenuPress = useCallback((key: string) => {
-    if (key === 'download') {
-      navigation.navigate('Download' as any);
-    }
-  }, [navigation]);
+  const handlePlayHistorySong = useCallback((song: SongResult) => {
+    playSong(song);
+  }, [playSong]);
 
+  const handleDeletePlaylist = useCallback((playlistId: number, playlistName: string) => {
+    Alert.alert(
+      '删除歌单',
+      `确定要删除「${playlistName}」吗？此操作不可撤销。`,
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '删除',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const res = await deletePlaylist(playlistId);
+              if (res?.data?.code === 200) {
+                Alert.alert('提示', '歌单已删除');
+                fetchUserPlaylists();
+              } else {
+                Alert.alert('错误', res?.data?.message || res?.data?.msg || '删除失败');
+              }
+            } catch {
+              Alert.alert('错误', '删除歌单失败，请重试');
+            }
+          },
+        },
+      ]
+    );
+  }, [fetchUserPlaylists]);
+
+  const handlePlayRecordSong = useCallback((recordItem: any) => {
+    const song = recordItem.song;
+    if (!song) return;
+    const songResult: SongResult = {
+      id: song.id,
+      name: song.name,
+      picUrl: song.al?.picUrl || song.album?.picUrl || '',
+      ar: song.ar || song.artists?.map((a: any) => ({ id: a.id, name: a.name })) || [],
+      al: song.al || song.album || { id: 0, name: '', picUrl: '' },
+      count: 0,
+    };
+    playSong(songResult);
+  }, [playSong]);
+
+  // ─── Not Logged In ───
   const renderNotLoggedIn = () => (
-    <View style={styles.loginPrompt}>
-      <View style={[styles.avatarPlaceholder, { backgroundColor: colors.surfaceVariant }]}>
-        <MaterialCommunityIcons name="account-circle" size={48} color={colors.textSecondary} />
+    <View style={styles.heroSection}>
+      <LinearGradient
+        colors={[colors.primary, colors.primary + 'CC', colors.primary + '88']}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={[styles.heroContent, { paddingTop: insets.top + Spacing.lg }]}>
+        <View style={[styles.avatarPlaceholder, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
+          <MaterialCommunityIcons name="account-circle" size={56} color="rgba(255,255,255,0.8)" />
+        </View>
+        <Text style={styles.heroNickname}>未登录</Text>
+        <Text style={styles.heroSignature}>登录后享受更多功能</Text>
+        <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
+          <Text style={styles.loginButtonText}>立即登录</Text>
+        </TouchableOpacity>
       </View>
-      <Text style={[styles.loginTitle, { color: colors.text }]}>登录网易云音乐</Text>
-      <Text style={[styles.loginSubtitle, { color: colors.textSecondary }]}>登录后即可享受更多功能</Text>
-      <TouchableOpacity style={[styles.loginButton, { backgroundColor: colors.primary }]} onPress={handleLogin}>
-        <Text style={styles.loginButtonText}>立即登录</Text>
-      </TouchableOpacity>
     </View>
   );
 
-  const renderLoggedIn = () => {
-    const profile = user as any;
-    const nickname = profile?.nickname || profile?.profile?.nickname || '用户';
-    const avatarUrl = profile?.avatarUrl || profile?.profile?.avatarUrl;
-    const vipType = profile?.vipType ?? profile?.profile?.vipType ?? 0;
+  // ─── Logged In Hero ───
+  const renderLoggedInHero = () => (
+    <View style={styles.heroSection}>
+      {backgroundUrl ? (
+        <View style={StyleSheet.absoluteFill}>
+          <NetworkImage uri={backgroundUrl} style={styles.heroBackgroundImg} />
+          <LinearGradient
+            colors={['rgba(0,0,0,0.1)', 'rgba(0,0,0,0.75)']}
+            style={StyleSheet.absoluteFill}
+          />
+        </View>
+      ) : (
+        <LinearGradient
+          colors={[colors.primary, colors.primary + 'CC', colors.primary + '88']}
+          style={StyleSheet.absoluteFill}
+        />
+      )}
 
-    return (
-      <View style={styles.profileSection}>
-        <View style={styles.profileHeader}>
-          <NetworkImage uri={avatarUrl} style={styles.avatar} />
-          <View style={styles.profileInfo}>
-            <Text style={[styles.nickname, { color: colors.text }]}>{nickname}</Text>
-            {vipType > 0 && (
-              <View style={styles.vipBadge}>
-                <MaterialCommunityIcons name="crown" size={12} color="#333333" />
-                <Text style={styles.vipText}>VIP</Text>
-              </View>
-            )}
+      <View style={[styles.heroContent, { paddingTop: insets.top + Spacing.lg }]}>
+        {/* Avatar + Nickname Row */}
+        <View style={styles.heroUserRow}>
+          <NetworkImage uri={avatarUrl} style={styles.heroAvatar} />
+          <View style={styles.heroUserText}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={styles.heroNickname}>{nickname}</Text>
+              {loginType && (
+                <View style={styles.loginTypeTag}>
+                  <Text style={styles.loginTypeTagText}>
+                    {loginType === 'qr' ? '扫码' : loginType === 'phone' ? '手机' : loginType === 'cookie' ? 'Cookie' : 'UID'}
+                  </Text>
+                </View>
+              )}
+            </View>
+            {signature ? (
+              <Text style={styles.heroSignature} numberOfLines={1}>{signature}</Text>
+            ) : null}
           </View>
-          <TouchableOpacity style={[styles.logoutButton, { borderColor: colors.border }]} onPress={handleLogout}>
-            <MaterialCommunityIcons name="logout" size={16} color={colors.textSecondary} />
-            <Text style={[styles.logoutText, { color: colors.textSecondary }]}>退出</Text>
+          <TouchableOpacity
+            style={styles.settingsButton}
+            onPress={() => navigation.navigate('Settings')}
+          >
+            <MaterialCommunityIcons name="cog-outline" size={22} color="rgba(255,255,255,0.8)" />
           </TouchableOpacity>
+        </View>
+
+        {/* Stats Row */}
+        <View style={styles.statsRow}>
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{followeds > 0 ? formatPlayCount(followeds) : '0'}</Text>
+            <Text style={styles.statLabel}>粉丝</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{follows > 0 ? formatPlayCount(follows) : '0'}</Text>
+            <Text style={styles.statLabel}>关注</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>Lv.{userLevel || (profile?.vipType ?? 0)}</Text>
+            <Text style={styles.statLabel}>等级</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <TouchableOpacity
+            style={styles.logoutButton}
+            onPress={handleLogout}
+          >
+            <MaterialCommunityIcons name="logout" size={14} color="rgba(255,255,255,0.7)" />
+            <Text style={styles.logoutText}>退出</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+
+  // ─── Quick Menu (我的音乐) ───
+  const renderQuickMenu = () => {
+    const menuItems = [
+      { key: 'favorite', icon: 'heart-outline' as const, label: '我喜欢的音乐', color: '#ef4444' },
+      { key: 'recent', icon: 'history' as const, label: '听歌排行', color: '#06b6d4' },
+      { key: 'download', icon: 'download-outline' as const, label: '本地/下载', color: '#22c55e' },
+      { key: 'import', icon: 'playlist-plus' as const, label: '歌单导入', color: '#8b5cf6' },
+    ];
+    return (
+      <View style={styles.section}>
+        <View style={styles.quickMenuGrid}>
+          {menuItems.map((item) => (
+            <TouchableOpacity
+              key={item.key}
+              style={[styles.quickMenuCard, { backgroundColor: colors.surfaceVariant }]}
+              activeOpacity={0.6}
+              onPress={() => {
+                if (item.key === 'favorite') {
+                  if (!user) {
+                    navigation.navigate('Login');
+                    return;
+                  }
+                  const likePlaylist = playlists.find((p) => !p.subscribed);
+                  if (likePlaylist) {
+                    navigation.navigate('PlaylistDetail', { id: likePlaylist.id });
+                  } else {
+                    Alert.alert('提示', '未找到我喜欢的音乐歌单');
+                  }
+                } else if (item.key === 'recent') {
+                  if (recordSectionY > 0) {
+                    scrollViewRef.current?.scrollTo({ y: recordSectionY - 60, animated: true });
+                  }
+                } else if (item.key === 'download') {
+                  navigation.navigate('Download' as any);
+                } else if (item.key === 'import') {
+                  if (!user) {
+                    navigation.navigate('Login');
+                    return;
+                  }
+                  navigation.navigate('PlaylistImport');
+                }
+              }}
+            >
+              <View style={[styles.quickMenuIcon, { backgroundColor: `${item.color}18` }]}>
+                <MaterialCommunityIcons name={item.icon} size={22} color={item.color} />
+              </View>
+              <Text style={[styles.quickMenuLabel, { color: colors.text }]} numberOfLines={1}>
+                {item.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
       </View>
     );
   };
 
-  const renderUserPlaylists = () => {
+  // ─── Playlists & Albums with Tabs ───
+  const renderPlaylistsAndAlbums = () => {
     if (!user) return null;
+
+    const tabs: { key: PlaylistTab; label: string; count: number }[] = [
+      { key: 'created', label: '创建', count: createdPlaylists.length },
+      { key: 'collected', label: '收藏', count: collectedPlaylists.length },
+      { key: 'album', label: '专辑', count: albumList.length },
+    ];
+
+    return (
+      <View style={styles.section}>
+        {/* Tab Bar */}
+        <View style={[styles.tabBar, { backgroundColor: colors.surfaceVariant }]}>
+          {tabs.map((tab) => {
+            const isActive = playlistTab === tab.key;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={[styles.tabItem, isActive && { backgroundColor: colors.background }]}
+                activeOpacity={0.7}
+                onPress={() => setPlaylistTab(tab.key)}
+              >
+                <Text style={[
+                  styles.tabLabel,
+                  { color: isActive ? colors.primary : colors.textSecondary },
+                ]}>
+                  {tab.label} ({tab.count})
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Tab Content */}
+        {playlistTab === 'album' ? renderAlbumGrid() : renderPlaylistList()}
+        {playlistTab === 'created' && displayPlaylists.length > 0 && (
+          <Text style={[styles.playlistTip, { color: colors.textTertiary }]}>
+            长按歌单可删除
+          </Text>
+        )}
+      </View>
+    );
+  };
+
+  // ─── Album Grid ───
+  const renderAlbumGrid = () => {
+    if (albumLoading) {
+      return (
+        <View style={styles.loadingBox}>
+          <ActivityIndicator size="small" color={colors.primary} />
+        </View>
+      );
+    }
+    if (albumList.length === 0) {
+      return (
+        <View style={styles.emptyBox}>
+          <MaterialCommunityIcons name="disc" size={40} color={colors.textTertiary} />
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>还没有收藏专辑</Text>
+        </View>
+      );
+    }
+    return (
+      <FlatList
+        data={albumList}
+        keyExtractor={(item, index) => String(item.id || index)}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={styles.albumCard}
+            onPress={() => navigation.navigate('AlbumDetail', { id: item.id })}
+          >
+            <NetworkImage uri={item.picUrl || item.coverImgUrl} style={styles.albumCover} />
+            <Text style={[styles.albumName, { color: colors.text }]} numberOfLines={2}>{item.name}</Text>
+            <Text style={[styles.albumArtist, { color: colors.textSecondary }]} numberOfLines={1}>
+              {item.artist?.name || item.ar?.name || '未知歌手'}
+            </Text>
+          </TouchableOpacity>
+        )}
+        numColumns={3}
+        columnWrapperStyle={styles.albumRow}
+        scrollEnabled={false}
+      />
+    );
+  };
+
+  // ─── Playlist List ───
+  const renderPlaylistList = () => {
     if (playlistsLoading) {
       return (
+        <View style={styles.loadingBox}>
+          <ActivityIndicator size="small" color={colors.primary} />
+        </View>
+      );
+    }
+    if (displayPlaylists.length === 0) {
+      return (
+        <View style={styles.emptyBox}>
+          <MaterialCommunityIcons name="music-note-off" size={40} color={colors.textTertiary} />
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+            {playlistTab === 'created' ? '还没有创建歌单' : '还没有收藏歌单'}
+          </Text>
+        </View>
+      );
+    }
+    return displayPlaylists.map((item) => (
+      <TouchableOpacity
+        key={String(item.id)}
+        style={[styles.playlistCard, { borderBottomColor: colors.divider }]}
+        onPress={() => navigation.navigate('PlaylistDetail', { id: item.id })}
+        onLongPress={() => handleDeletePlaylist(item.id, item.name)}
+        activeOpacity={0.6}
+      >
+        <NetworkImage uri={item.coverImgUrl} style={styles.playlistCover} />
+        <View style={styles.playlistInfo}>
+          <Text style={[styles.playlistName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+          <Text style={[styles.playlistMeta, { color: colors.textSecondary }]}>
+            {item.trackCount}首{item.playCount > 0 ? ` · ${formatPlayCount(item.playCount)}次播放` : ''}
+          </Text>
+        </View>
+        <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textTertiary} />
+      </TouchableOpacity>
+    ));
+  };
+
+  // ─── Listening Record ───
+  const renderRecord = () => {
+    if (!user) return null;
+    if (recordLoading) {
+      return (
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>我的歌单</Text>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleRow}>
+              <View style={[styles.sectionDot, { backgroundColor: '#f59e0b' }]} />
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>听歌排行</Text>
+            </View>
+          </View>
           <View style={styles.loadingBox}>
             <ActivityIndicator size="small" color={colors.primary} />
           </View>
         </View>
       );
     }
-
-    if (playlists.length === 0) return null;
+    if (recordSongs.length === 0) return null;
 
     return (
-      <View style={styles.section}>
+      <View style={styles.section} onLayout={(e) => setRecordSectionY(e.nativeEvent.layout.y)}>
         <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>我的歌单</Text>
-          <Text style={[styles.playlistCount, { color: colors.textSecondary }]}>{playlists.length}个歌单</Text>
+          <View style={styles.sectionTitleRow}>
+            <View style={[styles.sectionDot, { backgroundColor: '#f59e0b' }]} />
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>听歌排行</Text>
+          </View>
         </View>
-        {playlists.map((item) => (
-          <TouchableOpacity
-            key={String(item.id)}
-            style={[styles.playlistCard, { borderBottomColor: colors.divider }]}
-            onPress={() => navigation.navigate('PlaylistDetail', { id: item.id })}
-          >
-            <NetworkImage uri={item.coverImgUrl} style={styles.playlistCover} />
-            <View style={styles.playlistInfo}>
-              <Text style={[styles.playlistName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-              <Text style={[styles.playlistMeta, { color: colors.textSecondary }]}>
-                {item.trackCount}首 · {formatPlayCount(item.playCount)}次播放
+        {recordSongs.map((record, index) => {
+          const song = record.song;
+          if (!song) return null;
+          const playCount = record.playCount || record.score || 0;
+          return (
+            <TouchableOpacity
+              key={String(song.id || index)}
+              style={[styles.recordItem, { borderBottomColor: colors.divider }]}
+              activeOpacity={0.6}
+              onPress={() => handlePlayRecordSong(record)}
+            >
+              <Text style={[
+                styles.recordIndex,
+                { color: index < 3 ? colors.primary : colors.textTertiary },
+              ]}>
+                {String(index + 1).padStart(2, '0')}
               </Text>
-            </View>
-            <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textTertiary} />
-          </TouchableOpacity>
-        ))}
+              <NetworkImage
+                uri={song.al?.picUrl || song.album?.picUrl || ''}
+                style={styles.recordCover}
+              />
+              <View style={styles.recordInfo}>
+                <Text style={[styles.recordName, { color: colors.text }]} numberOfLines={1}>
+                  {song.name}
+                </Text>
+                <Text style={[styles.recordArtist, { color: colors.textSecondary }]} numberOfLines={1}>
+                  {song.ar?.map((a: any) => a.name).join(' / ') ||
+                   song.artists?.map((a: any) => a.name).join(' / ') ||
+                   '未知歌手'}
+                </Text>
+              </View>
+              {playCount > 0 && (
+                <Text style={[styles.recordPlayCount, { color: colors.textTertiary }]}>
+                  {formatPlayCount(playCount)}次
+                </Text>
+              )}
+            </TouchableOpacity>
+          );
+        })}
       </View>
     );
   };
 
+  // ─── Recent History ───
   const renderRecentHistory = () => {
     if (musicHistory.length === 0) return null;
     const recentItems = musicHistory.slice(0, 10);
@@ -154,17 +541,24 @@ export default function UserScreen() {
     return (
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>最近播放</Text>
-          <TouchableOpacity onPress={() => {}}>
-          <Text style={[styles.seeAllText, { color: colors.primary }]}>查看全部</Text>
-          </TouchableOpacity>
+          <View style={styles.sectionTitleRow}>
+            <View style={[styles.sectionDot, { backgroundColor: '#06b6d4' }]} />
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>听歌排行</Text>
+          </View>
         </View>
         {recentItems.map((song, index) => (
           <TouchableOpacity
             key={String(song.id)}
             style={[styles.historyItem, { borderBottomColor: colors.divider }]}
-            onPress={() => {}}
+            activeOpacity={0.6}
+            onPress={() => handlePlayHistorySong(song)}
           >
+            <Text style={[
+              styles.recordIndex,
+              { color: index < 3 ? colors.primary : colors.textTertiary },
+            ]}>
+              {String(index + 1).padStart(2, '0')}
+            </Text>
             <NetworkImage
               uri={song.picUrl || song.al?.picUrl}
               style={styles.historyCover}
@@ -175,227 +569,358 @@ export default function UserScreen() {
                 {song.ar?.map((a) => a.name).join(' / ') || '未知歌手'}
               </Text>
             </View>
-            <Text style={[styles.historyCount, { color: colors.textTertiary }]}>{song.count || 0}次</Text>
+            <MaterialCommunityIcons name="play-circle-outline" size={26} color={colors.textTertiary} />
           </TouchableOpacity>
         ))}
       </View>
     );
   };
 
-  const renderMenuItems = () => (
-    <View style={styles.section}>
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>我的音乐</Text>
-      {MENU_ITEMS.map((item) => (
-        <TouchableOpacity
-          key={item.key}
-          style={[styles.menuItem, { borderBottomColor: colors.divider }]}
-          onPress={() => handleMenuPress(item.key)}
-        >
-          <View style={[styles.menuIconWrapper, { backgroundColor: `${colors.primary}15` }]}>
-            <MaterialCommunityIcons name={item.icon} size={22} color={colors.primary} />
-          </View>
-          <Text style={[styles.menuLabel, { color: colors.text }]}>{item.label}</Text>
-          <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textTertiary} />
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-
   return (
     <ScrollView
+      ref={scrollViewRef}
       style={[styles.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={{ paddingTop: insets.top, paddingBottom: 100 }}
+      contentContainerStyle={{ paddingBottom: 100 }}
       showsVerticalScrollIndicator={false}
     >
-      {user ? renderLoggedIn() : renderNotLoggedIn()}
-      {renderUserPlaylists()}
-      {renderMenuItems()}
+      {user ? renderLoggedInHero() : renderNotLoggedIn()}
+      {renderQuickMenu()}
+      {renderPlaylistsAndAlbums()}
+      {renderRecord()}
       {renderRecentHistory()}
     </ScrollView>
   );
 }
 
-function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
+function createStyles(colors: any) {
   return StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  loginPrompt: {
-    alignItems: 'center',
-    paddingTop: Spacing.xxxl * 2,
-    paddingBottom: Spacing.xxxl,
-    paddingHorizontal: Spacing.lg,
-  },
-  avatarPlaceholder: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.lg,
-  },
-  loginTitle: {
-    ...Typography.h3,
-    marginBottom: Spacing.xs,
-  },
-  loginSubtitle: {
-    ...Typography.body2,
-    marginBottom: Spacing.xl,
-  },
-  loginButton: {
-    paddingHorizontal: Spacing.xxl,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.xxl,
-  },
-  loginButtonText: {
-    ...Typography.body2,
-    color: '#ffffff',
-    fontWeight: '600',
-  },
-  profileSection: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xl,
-  },
-  profileHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: colors.surfaceVariant,
-  },
-  profileInfo: {
-    flex: 1,
-    marginLeft: Spacing.md,
-  },
-  nickname: {
-    ...Typography.h4,
-    fontWeight: '600',
-  },
-  vipBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFD700',
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.sm,
-    alignSelf: 'flex-start',
-    marginTop: Spacing.xs,
-  },
-  vipText: {
-    ...Typography.overline,
-    color: '#333333',
-    fontWeight: '700',
-    marginLeft: 2,
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.xxl,
-    borderWidth: 1,
-  },
-  logoutText: {
-    ...Typography.caption,
-    marginLeft: 4,
-  },
-  section: {
-    paddingHorizontal: Spacing.lg,
-    marginTop: Spacing.xl,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-  },
-  sectionTitle: {
-    ...Typography.h4,
-    fontWeight: '600',
-    marginBottom: Spacing.md,
-  },
-  playlistCount: {
-    ...Typography.caption,
-    marginBottom: Spacing.md,
-  },
-  seeAllText: {
-    ...Typography.caption,
-  },
-  loadingBox: {
-    paddingVertical: Spacing.xl,
-    alignItems: 'center',
-  },
-  playlistCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  playlistCover: {
-    width: 52,
-    height: 52,
-    borderRadius: BorderRadius.md,
-    backgroundColor: colors.surfaceVariant,
-  },
-  playlistInfo: {
-    flex: 1,
-    marginLeft: Spacing.md,
-  },
-  playlistName: {
-    ...Typography.body2,
-    fontWeight: '500',
-    marginBottom: 2,
-  },
-  playlistMeta: {
-    ...Typography.caption,
-  },
-  historyItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  historyCover: {
-    width: 44,
-    height: 44,
-    borderRadius: BorderRadius.sm,
-    backgroundColor: colors.surfaceVariant,
-  },
-  historyInfo: {
-    flex: 1,
-    marginLeft: Spacing.md,
-  },
-  historyName: {
-    ...Typography.body2,
-    fontWeight: '500',
-    marginBottom: 2,
-  },
-  historyArtist: {
-    ...Typography.caption,
-  },
-  historyCount: {
-    ...Typography.caption,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  menuIconWrapper: {
-    width: 36,
-    height: 36,
-    borderRadius: BorderRadius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: Spacing.md,
-  },
-  menuLabel: {
-    flex: 1,
-    ...Typography.body2,
-  },
+    container: { flex: 1 },
+
+    // ─── Hero Section ───
+    heroSection: {
+      height: HERO_HEIGHT,
+      position: 'relative',
+      overflow: 'hidden',
+    },
+    heroBackgroundImg: {
+      position: 'absolute',
+      top: 0, left: 0, right: 0, bottom: 0,
+    },
+    heroContent: {
+      flex: 1,
+      justifyContent: 'flex-end',
+      paddingHorizontal: Spacing.lg,
+      paddingBottom: Spacing.lg,
+    },
+    heroUserRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: Spacing.md,
+    },
+    heroAvatar: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      borderWidth: 2,
+      borderColor: 'rgba(255,255,255,0.4)',
+    },
+    heroUserText: {
+      flex: 1,
+      marginLeft: Spacing.md,
+    },
+    heroNickname: {
+      ...Typography.h3,
+      color: '#ffffff',
+      fontWeight: '700',
+      textShadowColor: 'rgba(0,0,0,0.3)',
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 2,
+    },
+    heroSignature: {
+      ...Typography.caption,
+      color: 'rgba(255,255,255,0.75)',
+      marginTop: 2,
+    },
+    loginTypeTag: {
+      backgroundColor: 'rgba(255,255,255,0.2)',
+      paddingHorizontal: 6,
+      paddingVertical: 1,
+      borderRadius: 8,
+      marginLeft: 8,
+    },
+    loginTypeTagText: {
+      ...Typography.overline,
+      color: 'rgba(255,255,255,0.8)',
+      fontSize: 9,
+    },
+    settingsButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: 'rgba(255,255,255,0.15)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    statsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    statItem: {
+      alignItems: 'center',
+      paddingHorizontal: Spacing.md,
+    },
+    statValue: {
+      ...Typography.body2,
+      color: '#ffffff',
+      fontWeight: '600',
+    },
+    statLabel: {
+      ...Typography.overline,
+      color: 'rgba(255,255,255,0.6)',
+      marginTop: 1,
+    },
+    statDivider: {
+      width: 1,
+      height: 20,
+      backgroundColor: 'rgba(255,255,255,0.2)',
+    },
+    logoutButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginLeft: 'auto',
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.xs,
+      borderRadius: BorderRadius.xxl,
+      backgroundColor: 'rgba(255,255,255,0.12)',
+    },
+    logoutText: {
+      ...Typography.overline,
+      color: 'rgba(255,255,255,0.7)',
+      marginLeft: 3,
+    },
+
+    // ─── Not Logged In ───
+    avatarPlaceholder: {
+      width: 80,
+      height: 80,
+      borderRadius: 40,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: Spacing.md,
+    },
+    loginButton: {
+      backgroundColor: 'rgba(255,255,255,0.2)',
+      paddingHorizontal: Spacing.xxl,
+      paddingVertical: Spacing.md,
+      borderRadius: BorderRadius.xxl,
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.3)',
+      marginTop: Spacing.sm,
+    },
+    loginButtonText: {
+      ...Typography.body2,
+      color: '#ffffff',
+      fontWeight: '600',
+    },
+
+    // ─── Section ───
+    section: {
+      paddingHorizontal: Spacing.lg,
+      marginTop: Spacing.xl,
+    },
+    sectionHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: Spacing.md,
+    },
+    sectionTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    sectionDot: {
+      width: 4,
+      height: 16,
+      borderRadius: 2,
+      marginRight: Spacing.sm,
+    },
+    sectionTitle: {
+      ...Typography.h4,
+      fontWeight: '600',
+    },
+    loadingBox: {
+      paddingVertical: Spacing.xl,
+      alignItems: 'center',
+    },
+    emptyBox: {
+      alignItems: 'center',
+      paddingVertical: Spacing.xxxl,
+    },
+    emptyText: {
+      ...Typography.body2,
+      marginTop: Spacing.sm,
+    },
+
+    // ─── Quick Menu ───
+    quickMenuGrid: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+    },
+    quickMenuCard: {
+      width: '23%',
+      alignItems: 'center',
+      paddingVertical: Spacing.md,
+      borderRadius: BorderRadius.lg,
+    },
+    quickMenuIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: BorderRadius.md,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginBottom: Spacing.xs,
+    },
+    quickMenuLabel: {
+      ...Typography.caption,
+      textAlign: 'center',
+    },
+
+    // ─── Tab Bar ───
+    tabBar: {
+      flexDirection: 'row',
+      borderRadius: BorderRadius.xxl,
+      padding: 3,
+      marginBottom: Spacing.md,
+    },
+    tabItem: {
+      flex: 1,
+      paddingVertical: Spacing.sm,
+      alignItems: 'center',
+      borderRadius: BorderRadius.xxl,
+    },
+    tabLabel: {
+      ...Typography.body2,
+      fontWeight: '600',
+    },
+
+    // ─── Playlist ───
+    playlistCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: Spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    playlistCover: {
+      width: 52,
+      height: 52,
+      borderRadius: BorderRadius.md,
+      backgroundColor: colors.surfaceVariant,
+    },
+    playlistInfo: {
+      flex: 1,
+      marginLeft: Spacing.md,
+    },
+    playlistName: {
+      ...Typography.body2,
+      fontWeight: '500',
+      marginBottom: 2,
+    },
+    playlistMeta: {
+      ...Typography.caption,
+    },
+    playlistTip: {
+      ...Typography.overline,
+      textAlign: 'center',
+      marginTop: Spacing.sm,
+      marginBottom: Spacing.xs,
+    },
+
+    // ─── Album Grid ───
+    albumRow: {
+      marginBottom: Spacing.md,
+    },
+    albumCard: {
+      width: ALBUM_CARD_SIZE,
+      marginHorizontal: Spacing.xs,
+    },
+    albumCover: {
+      width: ALBUM_CARD_SIZE - 8,
+      height: ALBUM_CARD_SIZE - 8,
+      borderRadius: BorderRadius.md,
+      backgroundColor: colors.surfaceVariant,
+    },
+    albumName: {
+      ...Typography.caption,
+      marginTop: Spacing.xs,
+      lineHeight: 16,
+    },
+    albumArtist: {
+      ...Typography.overline,
+      marginTop: 2,
+    },
+
+    // ─── Record ───
+    recordItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: Spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    recordIndex: {
+      ...Typography.caption,
+      width: 24,
+      textAlign: 'center',
+      fontWeight: '600',
+    },
+    recordCover: {
+      width: 44,
+      height: 44,
+      borderRadius: BorderRadius.sm,
+      backgroundColor: colors.surfaceVariant,
+      marginLeft: Spacing.xs,
+    },
+    recordInfo: {
+      flex: 1,
+      marginLeft: Spacing.md,
+    },
+    recordName: {
+      ...Typography.body2,
+      fontWeight: '500',
+      marginBottom: 2,
+    },
+    recordArtist: {
+      ...Typography.caption,
+    },
+    recordPlayCount: {
+      ...Typography.overline,
+      marginLeft: Spacing.sm,
+    },
+
+    // ─── History ───
+    historyItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: Spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    historyCover: {
+      width: 44,
+      height: 44,
+      borderRadius: BorderRadius.sm,
+      backgroundColor: colors.surfaceVariant,
+      marginLeft: Spacing.xs,
+    },
+    historyInfo: {
+      flex: 1,
+      marginLeft: Spacing.md,
+    },
+    historyName: {
+      ...Typography.body2,
+      fontWeight: '500',
+      marginBottom: 2,
+    },
+    historyArtist: {
+      ...Typography.caption,
+    },
   });
 }

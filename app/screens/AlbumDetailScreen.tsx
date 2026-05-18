@@ -6,8 +6,11 @@ import {
   ActivityIndicator,
   RefreshControl,
   StyleSheet,
+  Dimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import SongList from '../components/music/SongList';
 import NetworkImage from '../components/common/NetworkImage';
@@ -20,10 +23,15 @@ import { Typography } from '../theme/typography';
 import { formatPlayCount } from '../utils/format';
 import type { SongResult, RootStackScreenProps } from '../types';
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const HEADER_HEIGHT = SCREEN_WIDTH * 0.6;
+
 export default function AlbumDetailScreen({
   route,
+  navigation,
 }: RootStackScreenProps<'AlbumDetail'>) {
   const { id } = route.params;
+  const insets = useSafeAreaInsets();
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [album, setAlbum] = useState<any>(null);
@@ -93,14 +101,7 @@ export default function AlbumDetailScreen({
 
   const formatPublishTime = (timestamp: number) => {
     const date = new Date(timestamp);
-    return (
-      date.getFullYear() +
-      '年' +
-      (date.getMonth() + 1) +
-      '月' +
-      date.getDate() +
-      '日'
-    );
+    return date.getFullYear() + '年' + (date.getMonth() + 1) + '月' + date.getDate() + '日';
   };
 
   if (loading) {
@@ -123,39 +124,59 @@ export default function AlbumDetailScreen({
     );
   }
 
-  const ListHeader = (
-    <View>
-      <View style={styles.header}>
-        <NetworkImage uri={album?.picUrl} style={styles.cover} />
-        <View style={styles.headerInfo}>
-          <Text style={[styles.albumName, { color: colors.text }]} numberOfLines={2}>
-            {album?.name}
-          </Text>
-          <TouchableOpacity style={styles.artistRow}>
-            <MaterialCommunityIcons name="account-music" size={14} color={colors.primary} />
-            <Text style={[styles.artistName, { color: colors.primary }]} numberOfLines={1}>
-              {album?.artist?.name}
-            </Text>
-          </TouchableOpacity>
-          {album?.publishTime ? (
-            <View style={styles.metaRow}>
-              <MaterialCommunityIcons name="calendar-outline" size={12} color={colors.textTertiary} />
-              <Text style={[styles.publishTime, { color: colors.textTertiary }]}>
-                {formatPublishTime(album.publishTime)}
-              </Text>
+  const listHeader = (
+    <>
+      {/* ═══ Gradient Header ═══ */}
+      <View style={styles.headerContainer}>
+        <NetworkImage uri={album?.picUrl} style={styles.headerCover} />
+        <LinearGradient
+          colors={['rgba(0,0,0,0.15)', 'rgba(0,0,0,0.8)']}
+          style={styles.headerGradient}
+        />
+        {/* Back button */}
+        <TouchableOpacity
+          style={[styles.backButton, { top: insets.top + 8 }]}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons name="arrow-left" size={24} color="#ffffff" />
+        </TouchableOpacity>
+        {/* Info overlay */}
+        <View style={[styles.headerInfo, { paddingBottom: Spacing.lg }]}>
+          <View style={styles.headerCoverRow}>
+            <NetworkImage uri={album?.picUrl} style={styles.headerAlbumCover} />
+            <View style={styles.headerTextInfo}>
+              <Text style={styles.headerAlbumName} numberOfLines={2}>{album?.name}</Text>
+              <TouchableOpacity
+                style={styles.artistRow}
+                onPress={() => album?.artist?.id && navigation.navigate('ArtistDetail', { id: album.artist.id })}
+              >
+                <MaterialCommunityIcons name="account-music" size={14} color="rgba(255,255,255,0.9)" />
+                <Text style={styles.artistNameText} numberOfLines={1}>{album?.artist?.name}</Text>
+              </TouchableOpacity>
+              <View style={styles.metaRow}>
+                {album?.publishTime ? (
+                  <>
+                    <MaterialCommunityIcons name="calendar-outline" size={12} color="rgba(255,255,255,0.7)" />
+                    <Text style={styles.metaText}>{formatPublishTime(album.publishTime)}</Text>
+                    <Text style={styles.metaDot}>·</Text>
+                  </>
+                ) : null}
+                {album?.size ? (
+                  <>
+                    <MaterialCommunityIcons name="music-note" size={12} color="rgba(255,255,255,0.7)" />
+                    <Text style={styles.metaText}>{album.size}首</Text>
+                  </>
+                ) : null}
+              </View>
             </View>
-          ) : null}
-          {album?.size ? (
-            <View style={styles.metaRow}>
-              <MaterialCommunityIcons name="music-note" size={12} color={colors.textTertiary} />
-              <Text style={[styles.songCount, { color: colors.textTertiary }]}>{album.size}首</Text>
-            </View>
-          ) : null}
+          </View>
         </View>
       </View>
 
+      {/* ═══ Description ═══ */}
       {album?.description ? (
-        <View style={styles.descContainer}>
+        <View style={styles.descSection}>
           <Text style={[styles.descLabel, { color: colors.text }]}>简介</Text>
           <Text style={[styles.descText, { color: colors.textSecondary }]} numberOfLines={3}>
             {album.description}
@@ -163,11 +184,15 @@ export default function AlbumDetailScreen({
         </View>
       ) : null}
 
-      <TouchableOpacity style={[styles.playAllButton, { backgroundColor: colors.primary }]} onPress={handlePlayAll}>
-        <MaterialCommunityIcons name="play" size={18} color="#ffffff" />
-        <Text style={styles.playAllText}>播放全部</Text>
-      </TouchableOpacity>
-    </View>
+      {/* ═══ Play All ═══ */}
+      <View style={styles.playAllRow}>
+        <TouchableOpacity style={[styles.playAllButton, { backgroundColor: colors.primary }]} onPress={handlePlayAll} activeOpacity={0.7}>
+          <MaterialCommunityIcons name="play" size={18} color="#ffffff" />
+          <Text style={styles.playAllText}>播放全部</Text>
+        </TouchableOpacity>
+        <Text style={[styles.songCount, { color: colors.textSecondary }]}>{songs.length} 首</Text>
+      </View>
+    </>
   );
 
   return (
@@ -175,7 +200,8 @@ export default function AlbumDetailScreen({
       <SongList
         songs={songs}
         onSongPress={handleSongPress}
-        ListHeaderComponent={ListHeader}
+        ListHeaderComponent={listHeader}
+        contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -191,106 +217,161 @@ export default function AlbumDetailScreen({
 
 function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   return StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  errorText: {
-    ...Typography.body1,
-    marginTop: Spacing.md,
-    marginBottom: Spacing.lg,
-  },
-  retryButton: {
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-  },
-  retryText: {
-    ...Typography.body2,
-    color: '#ffffff',
-    fontWeight: '500',
-  },
-  header: {
-    flexDirection: 'row',
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.md,
-  },
-  cover: {
-    width: 140,
-    height: 140,
-    borderRadius: BorderRadius.md,
-    backgroundColor: colors.surfaceVariant,
-  },
-  headerInfo: {
-    flex: 1,
-    marginLeft: Spacing.md,
-    justifyContent: 'center',
-  },
-  albumName: {
-    ...Typography.h3,
-    fontWeight: '600',
-    marginBottom: Spacing.xs,
-  },
-  artistRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Spacing.xs,
-  },
-  artistName: {
-    ...Typography.body2,
-    marginLeft: 4,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Spacing.xs,
-  },
-  publishTime: {
-    ...Typography.caption,
-    marginLeft: 4,
-  },
-  songCount: {
-    ...Typography.caption,
-    marginLeft: 4,
-  },
-  descContainer: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-  },
-  descLabel: {
-    ...Typography.body2,
-    fontWeight: '500',
-    marginBottom: Spacing.xs,
-  },
-  descText: {
-    ...Typography.caption,
-    lineHeight: 18,
-  },
-  playAllButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: Spacing.lg,
-    marginVertical: Spacing.md,
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.xl,
-  },
-  playAllText: {
-    ...Typography.body2,
-    color: '#ffffff',
-    fontWeight: '600',
-    marginLeft: Spacing.xs,
-  },
+    container: {
+      flex: 1,
+    },
+    loadingContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    errorContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    errorText: {
+      ...Typography.body1,
+      marginTop: Spacing.md,
+      marginBottom: Spacing.lg,
+    },
+    retryButton: {
+      paddingHorizontal: Spacing.xl,
+      paddingVertical: Spacing.sm,
+      borderRadius: BorderRadius.md,
+    },
+    retryText: {
+      ...Typography.body2,
+      color: '#ffffff',
+      fontWeight: '500',
+    },
+
+    // ═══ Gradient Header ═══
+    headerContainer: {
+      height: HEADER_HEIGHT,
+      position: 'relative',
+    },
+    headerCover: {
+      width: SCREEN_WIDTH,
+      height: HEADER_HEIGHT,
+    },
+    headerGradient: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
+      height: HEADER_HEIGHT * 0.75,
+    },
+    backButton: {
+      position: 'absolute',
+      left: Spacing.md,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: 'rgba(0,0,0,0.3)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 10,
+    },
+    headerInfo: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
+      paddingHorizontal: Spacing.lg,
+    },
+    headerCoverRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+    },
+    headerAlbumCover: {
+      width: 90,
+      height: 90,
+      borderRadius: BorderRadius.lg,
+      backgroundColor: 'rgba(0,0,0,0.2)',
+    },
+    headerTextInfo: {
+      flex: 1,
+      marginLeft: Spacing.md,
+      marginBottom: 4,
+    },
+    headerAlbumName: {
+      ...Typography.h4,
+      color: '#ffffff',
+      fontWeight: '700',
+      marginBottom: Spacing.xs,
+      textShadowColor: 'rgba(0,0,0,0.4)',
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 2,
+    },
+    artistRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: Spacing.xs,
+    },
+    artistNameText: {
+      ...Typography.caption,
+      color: 'rgba(255,255,255,0.9)',
+      marginLeft: 4,
+    },
+    metaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    metaText: {
+      ...Typography.caption,
+      color: 'rgba(255,255,255,0.7)',
+      marginLeft: 4,
+      fontSize: 11,
+    },
+    metaDot: {
+      ...Typography.caption,
+      color: 'rgba(255,255,255,0.5)',
+      marginHorizontal: Spacing.xs,
+    },
+
+    // ═══ Description ═══
+    descSection: {
+      paddingHorizontal: Spacing.lg,
+      paddingTop: Spacing.lg,
+      paddingBottom: Spacing.sm,
+    },
+    descLabel: {
+      ...Typography.body2,
+      fontWeight: '500',
+      marginBottom: Spacing.xs,
+    },
+    descText: {
+      ...Typography.caption,
+      lineHeight: 18,
+    },
+
+    // ═══ Play All ═══
+    playAllRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.md,
+    },
+    playAllButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.md,
+      borderRadius: BorderRadius.xxl,
+    },
+    playAllText: {
+      ...Typography.body2,
+      color: '#ffffff',
+      fontWeight: '600',
+      marginLeft: Spacing.xs,
+    },
+    songCount: {
+      ...Typography.caption,
+    },
+    listContent: {
+      paddingBottom: 100,
+    },
   });
 }

@@ -127,6 +127,11 @@ export const useUserStore = create<UserState & UserActions>()(
           const token = await AsyncStorage.getItem(TOKEN_KEY);
           if (!token) return false;
 
+          // UID login: no real cookie, just restore persisted user data
+          if (token.startsWith('uid:')) {
+            return !!get().user;
+          }
+
           const res = await getUserAccount();
           const profile = res?.data?.profile;
           const account = res?.data?.account;

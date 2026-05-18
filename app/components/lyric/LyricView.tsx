@@ -24,6 +24,9 @@ interface LyricViewProps {
   showTranslation: boolean;
   isLoading: boolean;
   onSeekTo: (timeMs: number) => void;
+  onOverscrollTop?: () => void;
+  bottomOffset?: number;
+  topOffset?: number;
 }
 
 export default function LyricView({
@@ -34,6 +37,9 @@ export default function LyricView({
   showTranslation,
   isLoading,
   onSeekTo,
+  onOverscrollTop,
+  bottomOffset = 0,
+  topOffset = 0,
 }: LyricViewProps) {
   const flatListRef = useRef<FlatList>(null);
   const isUserScrollingRef = useRef(false);
@@ -59,14 +65,28 @@ export default function LyricView({
     }
   }, []);
 
-  const handleScrollEndDrag = useCallback(() => {
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current);
-    }
-    scrollTimeoutRef.current = setTimeout(() => {
-      isUserScrollingRef.current = false;
-    }, SCROLL_THRESHOLD);
-  }, []);
+  const handleScrollEndDrag = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, velocity } = e.nativeEvent;
+      // Detect overscroll at top: user is at/past the top and swiping down
+      if (
+        onOverscrollTop &&
+        contentOffset.y <= 0 &&
+        velocity &&
+        velocity.y > 0.6
+      ) {
+        onOverscrollTop();
+        return;
+      }
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+      scrollTimeoutRef.current = setTimeout(() => {
+        isUserScrollingRef.current = false;
+      }, SCROLL_THRESHOLD);
+    },
+    [onOverscrollTop]
+  );
 
   const handleLinePress = useCallback(
     (startTimeMs: number) => {
@@ -103,6 +123,17 @@ export default function LyricView({
 
   const keyExtractor = useCallback((_: any, index: number) => String(index), []);
 
+  const scrollContentStyle = useMemo(
+    () => [
+      styles.scrollContent,
+      {
+        paddingTop: SCREEN_HEIGHT * 0.18 + topOffset,
+        paddingBottom: SCREEN_HEIGHT * 0.3 + bottomOffset,
+      },
+    ],
+    [bottomOffset, topOffset]
+  );
+
   if (isLoading) {
     return (
       <View style={styles.centerContainer}>
@@ -130,7 +161,7 @@ export default function LyricView({
       onScrollBeginDrag={handleScrollBeginDrag}
       onScrollEndDrag={handleScrollEndDrag}
       onMomentumScrollEnd={handleScrollEndDrag}
-      contentContainerStyle={styles.scrollContent}
+      contentContainerStyle={scrollContentStyle}
       initialScrollIndex={currentLineIndex > 0 ? currentLineIndex : 0}
       onScrollToIndexFailed={(info) => {
         const wait = new Promise((resolve) => setTimeout(resolve, 100));
@@ -147,7 +178,7 @@ export default function LyricView({
 
 const styles = StyleSheet.create({
   scrollContent: {
-    paddingVertical: SCREEN_HEIGHT * 0.3,
+    paddingTop: SCREEN_HEIGHT * 0.3,
   },
   itemContainer: {
     height: ITEM_HEIGHT,

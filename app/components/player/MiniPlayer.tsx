@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppTheme } from '../../theme/ThemeContext';
 import { Spacing, BorderRadius } from '../../theme/spacing';
@@ -8,7 +8,6 @@ import { usePlayerStore } from '../../store/playerStore';
 import { usePlaylistStore } from '../../store/playlistStore';
 import { usePlayer } from '../../hooks/usePlayer';
 import NetworkImage from '../common/NetworkImage';
-import PlayModeToggle from './PlayModeToggle';
 
 interface MiniPlayerProps {
   onPress?: () => void;
@@ -19,6 +18,7 @@ export default function MiniPlayer({ onPress }: MiniPlayerProps) {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const playMusic = usePlayerStore((s) => s.playMusic);
   const isPlay = usePlayerStore((s) => s.isPlay);
+  const isLoading = usePlayerStore((s) => s.isLoading);
   const currentProgress = usePlayerStore((s) => s.currentProgress);
   const duration = usePlayerStore((s) => s.duration);
   const setShowPlaylistDrawer = usePlaylistStore((s) => s.setShowPlaylistDrawer);
@@ -31,8 +31,11 @@ export default function MiniPlayer({ onPress }: MiniPlayerProps) {
   const progressPercent = duration > 0 ? currentProgress / duration : 0;
 
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={styles.container}>
-      <View style={[styles.progressBar, { width: `${Math.min(progressPercent * 100, 100)}%` }]} />
+    <TouchableOpacity onPress={onPress} activeOpacity={0.7} style={styles.container}>
+      {/* 底层进度条背景 */}
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: `${Math.min(progressPercent * 100, 100)}%` }]} />
+      </View>
 
       <View style={styles.content}>
         <NetworkImage uri={coverUrl} style={styles.cover} />
@@ -46,18 +49,27 @@ export default function MiniPlayer({ onPress }: MiniPlayerProps) {
           </Text>
         </View>
 
-        <PlayModeToggle size="small" />
-
-        <TouchableOpacity onPress={togglePlayback} style={styles.controlButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <MaterialCommunityIcons name={isPlay ? 'pause' : 'play'} size={26} color={colors.text} />
+        <TouchableOpacity onPress={togglePlayback} style={styles.controlBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <View style={styles.playBtnCircle}>
+            {isLoading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <MaterialCommunityIcons
+                name={isPlay ? 'pause' : 'play'}
+                size={22}
+                color="#fff"
+                style={!isPlay ? { marginLeft: 2 } : undefined}
+              />
+            )}
+          </View>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={next} style={styles.controlButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <MaterialCommunityIcons name="skip-next" size={26} color={colors.text} />
+        <TouchableOpacity onPress={next} style={styles.controlBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <MaterialCommunityIcons name="skip-next" size={24} color={colors.text} />
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => setShowPlaylistDrawer(true)} style={styles.controlButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <MaterialCommunityIcons name="playlist-music" size={24} color={colors.text} />
+        <TouchableOpacity onPress={() => setShowPlaylistDrawer(true)} style={styles.controlBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <MaterialCommunityIcons name="playlist-music" size={22} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
@@ -68,23 +80,35 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   return StyleSheet.create({
   container: {
     backgroundColor: colors.miniPlayerBg,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.divider,
+    borderRadius: BorderRadius.xl,
+    overflow: 'hidden',
+    // 阴影（iOS）
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    // 阴影（Android）
+    elevation: 4,
   },
-  progressBar: {
+  progressTrack: {
+    height: 2,
+    backgroundColor: colors.divider,
+  },
+  progressFill: {
     height: 2,
     backgroundColor: colors.primary,
   },
   content: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    paddingLeft: Spacing.md,
+    paddingRight: Spacing.sm,
+    paddingVertical: 8,
   },
   cover: {
-    width: 40,
-    height: 40,
-    borderRadius: BorderRadius.sm,
+    width: 42,
+    height: 42,
+    borderRadius: BorderRadius.md,
     backgroundColor: colors.surfaceVariant,
   },
   info: {
@@ -95,15 +119,26 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   name: {
     ...Typography.body2,
     color: colors.text,
-    fontWeight: '500',
-    marginBottom: 1,
+    fontWeight: '600',
+    marginBottom: 2,
   },
   artist: {
     ...Typography.caption,
     color: colors.textSecondary,
+    fontSize: 11,
   },
-  controlButton: {
+  playBtnCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  controlBtn: {
     padding: Spacing.xs,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   });
 }

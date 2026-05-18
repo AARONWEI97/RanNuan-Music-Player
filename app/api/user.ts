@@ -93,3 +93,44 @@ export const getUserAlbumSublist = (params?: { limit?: number; offset?: number }
     }
   });
 };
+
+export const getDjSublist = (params?: { limit?: number; offset?: number }) => {
+  return request({
+    url: '/dj/sublist',
+    method: 'get',
+    params: {
+      limit: params?.limit || 30,
+      timestamp: Date.now()
+    }
+  });
+};
+
+export const getDjProgram = (params: { rid: number; limit?: number; offset?: number; asc?: boolean }) => {
+  return request({
+    url: '/dj/program',
+    method: 'get',
+    params: {
+      rid: params.rid,
+      limit: params.limit || 30,
+      offset: params.offset || 0,
+      asc: params.asc ? 'true' : 'false',
+      timestamp: Date.now()
+    }
+  });
+};
+
+export const getDjDetail = (rid: number) => {
+  return request({
+    url: '/dj/detail',
+    method: 'get',
+    params: { rid, timestamp: Date.now() }
+  });
+};
+
+export const getRecentDj = (limit: number = 100) => {
+  return request({
+    url: '/record/recent/dj',
+    method: 'get',
+    params: { limit }
+  });
+};

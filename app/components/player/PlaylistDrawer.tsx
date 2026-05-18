@@ -3,10 +3,10 @@ import {
   Dimensions,
   FlatList,
   Modal,
+  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
-  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,7 +17,7 @@ import { usePlayerStore } from '../../store/playerStore';
 import { useAppTheme } from '../../theme/ThemeContext';
 import { Spacing, BorderRadius } from '../../theme/spacing';
 import { Typography } from '../../theme/typography';
-import { PLAY_MODE_SEQUENTIAL, PLAY_MODE_LOOP, PLAY_MODE_SHUFFLE, PLAY_MODE_INTELLIGENCE } from '../../constants/config';
+import { PLAY_MODE_SEQUENTIAL, PLAY_MODE_LOOP, PLAY_MODE_SHUFFLE } from '../../constants/config';
 import { usePlayer } from '../../hooks/usePlayer';
 import type { SongResult } from '../../types';
 
@@ -28,14 +28,12 @@ const PLAY_MODE_ICONS: Record<number, React.ComponentProps<typeof MaterialCommun
   [PLAY_MODE_SEQUENTIAL]: 'repeat',
   [PLAY_MODE_LOOP]: 'repeat-once',
   [PLAY_MODE_SHUFFLE]: 'shuffle',
-  [PLAY_MODE_INTELLIGENCE]: 'head-heart',
 };
 
 const PLAY_MODE_LABELS: Record<number, string> = {
   [PLAY_MODE_SEQUENTIAL]: '顺序播放',
   [PLAY_MODE_LOOP]: '单曲循环',
   [PLAY_MODE_SHUFFLE]: '随机播放',
-  [PLAY_MODE_INTELLIGENCE]: '心动模式',
 };
 
 export default function PlaylistDrawer() {
@@ -113,13 +111,17 @@ export default function PlaylistDrawer() {
       animationType="slide"
       onRequestClose={handleClose}
     >
-      <TouchableWithoutFeedback onPress={handleClose}>
-        <View style={styles.overlay}>
-          <TouchableWithoutFeedback>
-            <View style={[styles.drawer, { paddingBottom: insets.bottom + Spacing.md }]}>
-              <View style={styles.handle} />
+    <Pressable style={styles.overlay} onPress={handleClose}>
+      <Pressable>
+        <View style={[styles.drawer, { paddingBottom: insets.bottom + Spacing.md }]}>
+          <TouchableOpacity style={styles.handleWrap} onPress={handleClose} activeOpacity={0.6}>
+            <View style={styles.handle} />
+          </TouchableOpacity>
 
               <View style={styles.header}>
+                <TouchableOpacity style={styles.closeBtn} onPress={handleClose} activeOpacity={0.6}>
+                  <MaterialCommunityIcons name="chevron-down" size={24} color={colors.textSecondary} />
+                </TouchableOpacity>
                 <View style={styles.headerLeft}>
                   <MaterialCommunityIcons name="playlist-music" size={20} color={colors.text} />
                   <Text style={styles.headerTitle}>播放列表</Text>
@@ -154,10 +156,9 @@ export default function PlaylistDrawer() {
                   index,
                 })}
               />
-            </View>
-          </TouchableWithoutFeedback>
         </View>
-      </TouchableWithoutFeedback>
+      </Pressable>
+    </Pressable>
     </Modal>
   );
 }
@@ -180,9 +181,15 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       height: 4,
       borderRadius: 2,
       backgroundColor: colors.divider,
-      alignSelf: 'center',
-      marginTop: Spacing.md,
-      marginBottom: Spacing.sm,
+    },
+    handleWrap: {
+      paddingVertical: Spacing.md,
+      paddingHorizontal: Spacing.xxl,
+      alignItems: 'center',
+    },
+    closeBtn: {
+      padding: Spacing.xs,
+      marginRight: Spacing.sm,
     },
     header: {
       flexDirection: 'row',
