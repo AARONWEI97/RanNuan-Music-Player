@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Modal,
   StyleSheet,
   RefreshControl,
   Dimensions,
@@ -14,14 +15,21 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import type { RootStackScreenProps, SongResult } from '../types';
-import { getPlaylistDetail } from '../api/music';
+import { getPlaylistDetail, likeSong, updatePlaylistTracks } from '../api/music';
 import { deletePlaylist } from '../api/playlist';
 import { usePlayer } from '../hooks/usePlayer';
 import { usePlaylist } from '../hooks/usePlaylist';
+import { useDownload } from '../hooks/useDownload';
+import { useUserStore } from '../store/userStore';
+import { usePlaylistStore } from '../store/playlistStore';
+import { showToast } from '../components/ui/Toast';
 
 import { useAppTheme } from '../theme/ThemeContext';
 import SongList from '../components/music/SongList';
 import NetworkImage from '../components/common/NetworkImage';
+import SongActionSheet, { type SongActionItem } from '../components/music/SongActionSheet';
+import CommentList from '../components/comment/CommentList';
+import PlaylistEditSheet from '../components/playlist/PlaylistEditSheet';
 import { Spacing, BorderRadius } from '../theme/spacing';
 import { Typography } from '../theme/typography';
 import { formatPlayCount } from '../utils/format';
@@ -38,12 +46,19 @@ export default function PlaylistDetailScreen({
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const { playSong } = usePlayer();
-  const { playAll } = usePlaylist();
+  const { playAll, addToNext } = usePlaylist();
+  const { download } = useDownload();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [playlist, setPlaylist] = useState<any>(null);
   const [songs, setSongs] = useState<SongResult[]>([]);
+  const [actionSong, setActionSong] = useState<SongResult | null>(null);
+  const [showActionSheet, setShowActionSheet] = useState(false);
+  const [submitting, setSubmitting] = useState<string | null>(null);
+  const [showComments, setShowComments] = useState(false);
+  const [commentSongId, setCommentSongId] = useState<string>('');
+  const [showEditSheet, setShowEditSheet] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -100,6 +115,114 @@ export default function PlaylistDetailScreen({
     [songs, playAll, playSong]
   );
 
+  const handleSongMorePress = useCallback((song: SongResult, _index: number) => {
+    setActionSong(song);
+    setShowActionSheet(true);
+  }, []);
+
+  const handleCloseActionSheet = useCallback(() => {
+    setShowActionSheet(false);
+    setSubmitting(null);
+  }, []);
+
+  // ★ 是否为自己创建的歌单
+  const userId = useUserStore((s) => s.user?.userId);
+  const isOwnPlaylist = !!(playlist?.creator?.userId && userId && playlist.creator.userId === userId);
+
+  // ★ 构建操作菜单项
+  const actionItems: SongActionItem[] = useMemo(() => {
+    if (!actionSong) return [];
+    const s = actionSong;
+    const items: SongActionItem[] = [
+      {
+        key: 'play-next',
+        label: '下一首播放',
+        icon: 'skip-next',
+        onPress: () => {
+          addToNext(s);
+          showToast({ title: '已添加到下一首', message: `「${s.name}」将在当前歌曲播放完后播放`, type: 'success' });
+          handleCloseActionSheet();
+        },
+      },
+      {
+        key: 'like',
+        label: '收藏',
+        icon: 'heart-outline',
+        loading: submitting === 'like',
+        onPress: async () => {
+          setSubmitting('like');
+          try {
+            await likeSong(Number(s.id), true);
+            showToast({ title: '已收藏', message: `「${s.name}」已添加到「我喜欢的音乐」`, type: 'success' });
+            handleCloseActionSheet();
+          } catch { showToast({ title: '收藏失败', message: '请检查网络后重试', type: 'error' }); }
+          setSubmitting(null);
+        },
+      },
+      {
+        key: 'download',
+        label: '下载',
+        icon: 'download-outline',
+        onPress: () => {
+          download(s);
+          showToast({ title: '开始下载', message: `「${s.name}」已加入下载队列`, type: 'success' });
+          handleCloseActionSheet();
+        },
+      },
+    ];
+
+    // ★ 自己的歌单 → 显示删除按钮
+    if (isOwnPlaylist && playlist?.id) {
+      items.push({
+        key: 'remove',
+        label: '从歌单中删除',
+        icon: 'trash-can-outline',
+        destructive: true,
+        loading: submitting === 'remove',
+        onPress: async () => {
+          setSubmitting('remove');
+          try {
+            await updatePlaylistTracks({ op: 'del', pid: Number(id), tracks: String(s.id) });
+            // 本地立即移除
+            setSongs((prev) => prev.filter((song) => song.id !== s.id));
+            usePlaylistStore.getState().removeFromPlayList(s.id);
+            showToast({ title: '已删除', message: `「${s.name}」已从歌单中移除`, type: 'success' });
+            handleCloseActionSheet();
+          } catch { showToast({ title: '删除失败', message: '请检查网络后重试', type: 'error' }); }
+          setSubmitting(null);
+        },
+      });
+    }
+
+    items.push({
+      key: 'comment',
+      label: '查看歌曲评论',
+      icon: 'comment-text-outline',
+      onPress: () => {
+        handleCloseActionSheet();
+        setCommentSongId(String(s.id));
+        setShowComments(true);
+      },
+    });
+
+    items.push({
+      key: 'artist',
+      label: `歌手: ${s.ar?.map((a: any) => a.name).join('/') || '未知'}`,
+      icon: 'account-music-outline',
+      onPress: () => {
+        const artistId = s.ar?.[0]?.id;
+        if (artistId) {
+          handleCloseActionSheet();
+          navigation.navigate('ArtistDetail', { id: Number(artistId) });
+        } else {
+          showToast({ title: '暂无歌手信息', type: 'info' });
+        }
+      },
+    });
+
+    return items;
+  }, [actionSong, submitting, addToNext, download, handleCloseActionSheet, navigation, isOwnPlaylist, id, playlist?.id]);
+
   const handleDeletePlaylist = useCallback(() => {
     Alert.alert(
       '删除歌单',
@@ -128,27 +251,8 @@ export default function PlaylistDetailScreen({
     );
   }, [id, playlist, navigation]);
 
-  if (loading) {
-    return (
-      <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
-        <MaterialCommunityIcons name="alert-circle-outline" size={48} color={colors.textSecondary} />
-        <Text style={[styles.errorText, { color: colors.textSecondary }]}>加载失败</Text>
-        <TouchableOpacity style={[styles.retryButton, { backgroundColor: colors.primary }]} onPress={fetchData}>
-          <Text style={styles.retryText}>重试</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  const listHeader = (
+  // ★ useMemo 必须在早返回之前，否则 hook 数量不一致导致崩溃
+  const listHeader = useMemo(() => (
     <>
       {/* ═══ Gradient Header ═══ */}
       <View style={styles.headerContainer}>
@@ -165,6 +269,16 @@ export default function PlaylistDetailScreen({
         >
           <MaterialCommunityIcons name="arrow-left" size={24} color="#ffffff" />
         </TouchableOpacity>
+        {/* Edit button — only for own playlists */}
+        {isOwnPlaylist && (
+          <TouchableOpacity
+            style={[styles.editButton, { top: insets.top + 8 }]}
+            onPress={() => setShowEditSheet(true)}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons name="pencil-outline" size={20} color="#ffffff" />
+          </TouchableOpacity>
+        )}
         {/* Delete button */}
         <TouchableOpacity
           style={[styles.deleteButton, { top: insets.top + 8 }]}
@@ -220,13 +334,34 @@ export default function PlaylistDetailScreen({
         <Text style={[styles.songCount, { color: colors.textSecondary }]}>{songs.length} 首</Text>
       </View>
     </>
-  );
+  ), [playlist, songs.length, colors.primary, colors.textSecondary, insets.top, navigation, handleDeletePlaylist, handlePlayAll]);
+
+  if (loading) {
+    return (
+      <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
+        <MaterialCommunityIcons name="alert-circle-outline" size={48} color={colors.textSecondary} />
+        <Text style={[styles.errorText, { color: colors.textSecondary }]}>加载失败</Text>
+        <TouchableOpacity style={[styles.retryButton, { backgroundColor: colors.primary }]} onPress={fetchData}>
+          <Text style={styles.retryText}>重试</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <SongList
         songs={songs}
         onSongPress={handleSongPress}
+        onSongMorePress={handleSongMorePress}
         ListHeaderComponent={listHeader}
         contentContainerStyle={styles.listContent}
         refreshControl={
@@ -237,6 +372,39 @@ export default function PlaylistDetailScreen({
             tintColor={colors.primary}
           />
         }
+      />
+
+      <SongActionSheet
+        visible={showActionSheet}
+        song={actionSong}
+        actions={actionItems}
+        onClose={handleCloseActionSheet}
+      />
+
+      {/* ── 歌曲评论弹窗 ── */}
+      <Modal visible={showComments} animationType="slide" onRequestClose={() => setShowComments(false)}>
+        <View style={[{ flex: 1, backgroundColor: colors.background }, { paddingTop: insets.top }]}>
+          <View style={styles.commentHeader}>
+            <TouchableOpacity onPress={() => setShowComments(false)}>
+              <MaterialCommunityIcons name="chevron-left" size={26} color={colors.text} />
+            </TouchableOpacity>
+            <Text style={[styles.commentTitle, { color: colors.text }]}>歌曲评论</Text>
+            <View style={{ width: 40 }} />
+          </View>
+          <CommentList songId={Number(commentSongId)} type="music" />
+        </View>
+      </Modal>
+
+      {/* ── 歌单编辑 ── */}
+      <PlaylistEditSheet
+        visible={showEditSheet}
+        playlistId={Number(id)}
+        initialName={playlist?.name || ''}
+        initialDesc={playlist?.description || ''}
+        onClose={() => setShowEditSheet(false)}
+        onSaved={(name, desc) => {
+          setPlaylist((prev: any) => ({ ...prev, name, description: desc }));
+        }}
       />
     </View>
   );
@@ -306,6 +474,21 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       alignItems: 'center',
       zIndex: 10,
     },
+    editButton: {
+      position: 'absolute',
+      right: Spacing.md + 44,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: 'rgba(0,0,0,0.3)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 10,
+    },
+    commentHeader: {
+      flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, paddingBottom: Spacing.sm, marginTop: 0,
+    },
+    commentTitle: { flex: 1, fontSize: 18, fontWeight: '700', textAlign: 'center' },
     headerInfo: {
       position: 'absolute',
       left: 0,

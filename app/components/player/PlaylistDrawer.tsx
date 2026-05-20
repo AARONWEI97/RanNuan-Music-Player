@@ -75,7 +75,7 @@ export default function PlaylistDrawer() {
   const renderItem = useCallback(
     ({ item, index }: { item: SongResult; index: number }) => {
       const isActive = item.id === playMusic?.id;
-      const artistNames = item.ar?.map((a) => a.name).join(' / ') || '未知歌手';
+      const artistNames = item.ar?.map((a: any) => a.name).join(' / ') || item.artists?.map((a: any) => a.name).join(' / ') || '未知歌手';
 
       return (
         <TouchableOpacity

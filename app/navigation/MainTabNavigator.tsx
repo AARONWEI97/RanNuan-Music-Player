@@ -1,5 +1,5 @@
 import React, { useRef, useCallback, useState, useEffect } from 'react';
-import { View, StyleSheet, Image, Animated, Easing, Platform, Dimensions, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Image, Animated, Easing, Platform, Dimensions, TouchableOpacity, BackHandler } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { NavigationContainer, useNavigation, NavigationContainerRef } from '@react-navigation/native';
@@ -21,6 +21,11 @@ import MvScreen from '../screens/MvScreen';
 import LoginScreen from '../screens/LoginScreen';
 import DownloadScreen from '../screens/DownloadScreen';
 import PlaylistImportScreen from '../screens/PlaylistImportScreen';
+import MvPlayerScreen from '../screens/MvPlayerScreen';
+import LikedSongsScreen from '../screens/LikedSongsScreen';
+import HistoryScreen from '../screens/HistoryScreen';
+import LocalMusicScreen from '../screens/LocalMusicScreen';
+import HeatmapScreen from '../screens/HeatmapScreen';
 import MiniPlayer from '../components/player/MiniPlayer';
 import { usePlayerStore } from '../store/playerStore';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -358,6 +363,32 @@ export default function AppNavigator() {
     }
   }, []);
 
+  // ★ Android 硬件返回键处理：根页面按返回退出 App，而非触发 GO_BACK 警告
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+
+    const onBackPress = () => {
+      const state = navRef.current?.getRootState();
+      if (!state) return false;
+
+      // 获取当前最顶层的路由
+      const currentRoute = getDeepRouteName(state);
+
+      // 如果在 Tab 根页面，退出 App
+      const tabRoutes = ['Home', 'Search', 'User', 'Settings'];
+      if (tabRoutes.includes(currentRoute)) {
+        BackHandler.exitApp();
+        return true;
+      }
+
+      // 其他页面让导航器正常处理返回
+      return false;
+    };
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, []);
+
   return (
     <NavigationContainer ref={navRef} onStateChange={handleStateChange}>
       <View style={styles.rootContainer}>
@@ -380,6 +411,11 @@ export default function AppNavigator() {
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Download" component={DownloadScreen} />
           <Stack.Screen name="PlaylistImport" component={PlaylistImportScreen} />
+          <Stack.Screen name="MvPlayer" component={MvPlayerScreen} options={{ headerShown: false, animation: 'fade' }} />
+          <Stack.Screen name="LikedSongs" component={LikedSongsScreen} options={{ headerShown: false }} />
+          <Stack.Screen name="History" component={HistoryScreen} options={{ headerShown: false }} />
+          <Stack.Screen name="LocalMusic" component={LocalMusicScreen} options={{ headerShown: false }} />
+          <Stack.Screen name="Heatmap" component={HeatmapScreen} options={{ headerShown: false }} />
         </Stack.Navigator>
         <GlobalMiniPlayer currentRouteName={currentRouteName} />
       </View>

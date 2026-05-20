@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
+  Modal,
   RefreshControl,
   StyleSheet,
   Text,
@@ -14,6 +15,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import SongList from '../components/music/SongList';
 import NetworkImage from '../components/common/NetworkImage';
+import SongActionSheet from '../components/music/SongActionSheet';
+import CommentList from '../components/comment/CommentList';
+import { useSongActionSheet } from '../hooks/useSongActionSheet';
 import { usePlayer } from '../hooks/usePlayer';
 import { usePlaylist } from '../hooks/usePlaylist';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -117,6 +121,8 @@ export default function ArtistDetailScreen({ route, navigation }: RootStackScree
     [songs, playAll, playSong]
   );
 
+  const { actionSong, showSheet, actionItems, handlePress: handleSongMore, handleClose, commentSongId, showComments, setShowComments } = useSongActionSheet();
+
   const coverUrl = artist?.cover || artist?.avatar;
   const aliasText = artist?.alias?.length ? artist.alias.join(' / ') : '';
 
@@ -191,9 +197,11 @@ export default function ArtistDetailScreen({ route, navigation }: RootStackScree
   }
 
   return (
+    <View style={{ flex: 1 }}>
     <SongList
       songs={songs}
       onSongPress={handleSongPress}
+      onSongMorePress={handleSongMore}
       ListHeaderComponent={listHeader}
       contentContainerStyle={styles.songListContent}
       ListEmptyComponent={
@@ -211,6 +219,20 @@ export default function ArtistDetailScreen({ route, navigation }: RootStackScree
         />
       }
     />
+    <SongActionSheet visible={showSheet} song={actionSong} actions={actionItems} onClose={handleClose} />
+    <Modal visible={showComments} animationType="slide" onRequestClose={() => setShowComments(false)}>
+      <View style={[styles.commentModal, { backgroundColor: colors.background, paddingTop: insets.top }]}>
+        <View style={styles.commentHeader}>
+          <TouchableOpacity onPress={() => setShowComments(false)}>
+            <MaterialCommunityIcons name="chevron-left" size={26} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[styles.commentTitle, { color: colors.text }]}>歌曲评论</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <CommentList songId={Number(commentSongId)} type="music" />
+      </View>
+    </Modal>
+  </View>
   );
 }
 
@@ -334,6 +356,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   songListContent: {
     paddingBottom: 100,
   },
+  commentModal: { flex: 1 },
+  commentHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, paddingBottom: Spacing.sm },
+  commentTitle: { flex: 1, fontSize: 18, fontWeight: '700', textAlign: 'center' },
   emptyContainer: {
     justifyContent: 'center',
     alignItems: 'center',

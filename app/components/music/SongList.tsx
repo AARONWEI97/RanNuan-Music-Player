@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useRef } from 'react';
 import { FlatList, StyleSheet, ViewStyle, RefreshControlProps } from 'react-native';
 import { SongResult } from '../../types';
 import SongItem from './SongItem';
@@ -26,17 +26,23 @@ export default function SongList({
   contentContainerStyle,
   refreshControl,
 }: SongListProps) {
+  // ★ 用 ref 持有回调引用，避免 renderItem 依赖回调变化导致全量重渲染
+  const onSongPressRef = useRef(onSongPress);
+  const onSongMorePressRef = useRef(onSongMorePress);
+  onSongPressRef.current = onSongPress;
+  onSongMorePressRef.current = onSongMorePress;
+
   const renderItem = useCallback(
     ({ item, index }: { item: SongResult; index: number }) => (
       <SongItem
         song={item}
         index={index}
         isActive={currentSongId !== undefined && item.id === currentSongId}
-        onPress={() => onSongPress?.(item, index)}
-        onMorePress={() => onSongMorePress?.(item, index)}
+        onPress={() => onSongPressRef.current?.(item, index)}
+        onMorePress={() => onSongMorePressRef.current?.(item, index)}
       />
     ),
-    [currentSongId, onSongPress, onSongMorePress]
+    [currentSongId] // ★ 只依赖 currentSongId，不依赖回调函数
   );
 
   const keyExtractor = useCallback((item: SongResult) => String(item.id), []);
@@ -62,9 +68,11 @@ export default function SongList({
       refreshControl={refreshControl}
       showsVerticalScrollIndicator={false}
       removeClippedSubviews={true}
-      maxToRenderPerBatch={20}
-      initialNumToRender={15}
-      windowSize={10}
+      maxToRenderPerBatch={10}
+      initialNumToRender={12}
+      windowSize={5}
+      updateCellsBatchingPeriod={100}
+      keyboardShouldPersistTaps="handled"
     />
   );
 }

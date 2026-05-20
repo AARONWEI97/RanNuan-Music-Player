@@ -32,3 +32,25 @@ export function deletePlaylist(id: number | string) {
     params: { id }
   });
 }
+
+export function updatePlaylistName(params: { id: number; name: string }) {
+  return request.get('/playlist/name/update', { params });
+}
+
+export function updatePlaylistDesc(params: { id: number; desc: string }) {
+  return request.get('/playlist/desc/update', { params });
+}
+
+export function updatePlaylistTags(params: { id: number; tags: string }) {
+  return request.get('/playlist/tags/update', { params });
+}
+
+export function updatePlaylistCover(params: { id: number; imgFile: any }) {
+  return request.post('/playlist/cover/update', params, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+}
+
+export function updatePlaylist(params: { id: number; name: string; desc?: string; tags?: string }) {
+  return request.get('/playlist/update', { params });
+}

@@ -4,6 +4,7 @@ import {
   Alert,
   Dimensions,
   Image,
+  InteractionManager,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -236,7 +237,11 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
-    fetchData();
+    // ★ 延迟到交互空闲时加载数据，避免阻塞 UI 渲染
+    const handle = InteractionManager.runAfterInteractions(() => {
+      fetchData();
+    });
+    return () => handle.cancel();
   }, [fetchData]);
 
   const onRefresh = useCallback(() => {
@@ -345,6 +350,8 @@ export default function HomeScreen() {
                     name: s.name,
                     picUrl: s.album?.picUrl || s.picUrl || '',
                     ar: s.artists?.map((a: any) => ({ id: a.id, name: a.name })) || [],
+                    al: s.album || { id: 0, name: '', picUrl: '' },
+                    count: 0,
                   });
                 }
               }

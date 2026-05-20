@@ -4,6 +4,7 @@ import {
   Alert,
   Dimensions,
   FlatList,
+  InteractionManager,
   ScrollView,
   StyleSheet,
   Text,
@@ -93,49 +94,58 @@ export default function UserScreen() {
     checkLoginStatus();
   }, []);
 
-  // Refresh playlists whenever the screen gains focus (e.g., returning from PlaylistImport)
+  // Refresh playlists whenever the screen gains focus — ★ 延迟到交互空闲
   useFocusEffect(
     useCallback(() => {
       if (user?.userId) {
-        fetchUserPlaylists();
-        if (!isUidLogin) {
-          getUserDetail(user.userId).then((res) => {
-            const level = res?.data?.level;
-            if (level) setUserLevel(level);
-            const profile = res?.data?.profile;
-            if (profile) {
-              if (profile.followeds !== undefined) setFollowedCount(profile.followeds);
-              if (profile.follows !== undefined) setFollowCount(profile.follows);
-            }
-          }).catch(() => {});
-        }
+        const handle = InteractionManager.runAfterInteractions(() => {
+          fetchUserPlaylists();
+          if (!isUidLogin) {
+            getUserDetail(user.userId).then((res) => {
+              const level = res?.data?.level;
+              if (level) setUserLevel(level);
+              const profile = res?.data?.profile;
+              if (profile) {
+                if (profile.followeds !== undefined) setFollowedCount(profile.followeds);
+                if (profile.follows !== undefined) setFollowCount(profile.follows);
+              }
+            }).catch(() => {});
+          }
+        });
+        return () => handle.cancel();
       }
     }, [user?.userId, isUidLogin, fetchUserPlaylists])
   );
 
-  // Fetch listening records
+  // Fetch listening records — ★ 延迟到交互空闲时加载，避免阻塞 UI
   useEffect(() => {
     if (user?.userId && !isUidLogin) {
-      setRecordLoading(true);
-      getUserRecord(user.userId, 0).then((res) => {
-        const data = res?.data?.allData || res?.data?.weekData;
-        if (Array.isArray(data)) {
-          setRecordSongs(data.slice(0, 10));
-        }
-      }).catch(() => {}).finally(() => setRecordLoading(false));
+      const handle = InteractionManager.runAfterInteractions(() => {
+        setRecordLoading(true);
+        getUserRecord(user.userId, 0).then((res) => {
+          const data = res?.data?.allData || res?.data?.weekData;
+          if (Array.isArray(data)) {
+            setRecordSongs(data.slice(0, 10));
+          }
+        }).catch(() => {}).finally(() => setRecordLoading(false));
+      });
+      return () => handle.cancel();
     }
   }, [user?.userId, isUidLogin]);
 
-  // Fetch album list when tab switches to album
+  // Fetch album list when tab switches to album — ★ 延迟加载
   useEffect(() => {
     if (playlistTab === 'album' && albumList.length === 0 && user && !isUidLogin) {
-      setAlbumLoading(true);
-      getUserAlbumSublist({ limit: 100, offset: 0 }).then((res) => {
-        const data = res?.data?.data;
-        if (Array.isArray(data)) {
-          setAlbumList(data);
-        }
-      }).catch(() => {}).finally(() => setAlbumLoading(false));
+      const handle = InteractionManager.runAfterInteractions(() => {
+        setAlbumLoading(true);
+        getUserAlbumSublist({ limit: 30, offset: 0 }).then((res) => {
+          const data = res?.data?.data;
+          if (Array.isArray(data)) {
+            setAlbumList(data);
+          }
+        }).catch(() => {}).finally(() => setAlbumLoading(false));
+      });
+      return () => handle.cancel();
     }
   }, [playlistTab, user, isUidLogin]);
 
@@ -286,13 +296,15 @@ export default function UserScreen() {
   const renderQuickMenu = () => {
     const menuItems = [
       { key: 'favorite', icon: 'heart-outline' as const, label: '我喜欢的音乐', color: '#ef4444' },
-      { key: 'recent', icon: 'history' as const, label: '听歌排行', color: '#06b6d4' },
-      { key: 'download', icon: 'download-outline' as const, label: '本地/下载', color: '#22c55e' },
-      { key: 'import', icon: 'playlist-plus' as const, label: '歌单导入', color: '#8b5cf6' },
+      { key: 'recent', icon: 'history' as const, label: '播放历史', color: '#06b6d4' },
+      { key: 'local', icon: 'folder-music-outline' as const, label: '本地音乐', color: '#f59e0b' },
+      { key: 'heatmap', icon: 'chart-timeline-variant' as const, label: '听歌热力图', color: '#8b5cf6' },
+      { key: 'download', icon: 'download-outline' as const, label: '下载管理', color: '#22c55e' },
+      { key: 'import', icon: 'playlist-plus' as const, label: '歌单导入', color: '#ec4899' },
     ];
     return (
       <View style={styles.section}>
-        <View style={styles.quickMenuGrid}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickMenuScroll} contentContainerStyle={styles.quickMenuGrid}>
           {menuItems.map((item) => (
             <TouchableOpacity
               key={item.key}
@@ -300,27 +312,18 @@ export default function UserScreen() {
               activeOpacity={0.6}
               onPress={() => {
                 if (item.key === 'favorite') {
-                  if (!user) {
-                    navigation.navigate('Login');
-                    return;
-                  }
-                  const likePlaylist = playlists.find((p) => !p.subscribed);
-                  if (likePlaylist) {
-                    navigation.navigate('PlaylistDetail', { id: likePlaylist.id });
-                  } else {
-                    Alert.alert('提示', '未找到我喜欢的音乐歌单');
-                  }
+                  if (!user) { navigation.navigate('Login'); return; }
+                  navigation.navigate('LikedSongs');
                 } else if (item.key === 'recent') {
-                  if (recordSectionY > 0) {
-                    scrollViewRef.current?.scrollTo({ y: recordSectionY - 60, animated: true });
-                  }
+                  navigation.navigate('History');
+                } else if (item.key === 'local') {
+                  navigation.navigate('LocalMusic');
+                } else if (item.key === 'heatmap') {
+                  navigation.navigate('Heatmap');
                 } else if (item.key === 'download') {
                   navigation.navigate('Download' as any);
                 } else if (item.key === 'import') {
-                  if (!user) {
-                    navigation.navigate('Login');
-                    return;
-                  }
+                  if (!user) { navigation.navigate('Login'); return; }
                   navigation.navigate('PlaylistImport');
                 }
               }}
@@ -333,7 +336,7 @@ export default function UserScreen() {
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
       </View>
     );
   };
@@ -402,6 +405,7 @@ export default function UserScreen() {
     }
     return (
       <FlatList
+        key="album-grid"
         data={albumList}
         keyExtractor={(item, index) => String(item.id || index)}
         renderItem={({ item }) => (
@@ -419,6 +423,10 @@ export default function UserScreen() {
         numColumns={3}
         columnWrapperStyle={styles.albumRow}
         scrollEnabled={false}
+        initialNumToRender={9}
+        maxToRenderPerBatch={6}
+        windowSize={3}
+        removeClippedSubviews={true}
       />
     );
   };
@@ -442,24 +450,34 @@ export default function UserScreen() {
         </View>
       );
     }
-    return displayPlaylists.map((item) => (
-      <TouchableOpacity
-        key={String(item.id)}
-        style={[styles.playlistCard, { borderBottomColor: colors.divider }]}
-        onPress={() => navigation.navigate('PlaylistDetail', { id: item.id })}
-        onLongPress={() => handleDeletePlaylist(item.id, item.name)}
-        activeOpacity={0.6}
-      >
-        <NetworkImage uri={item.coverImgUrl} style={styles.playlistCover} />
-        <View style={styles.playlistInfo}>
-          <Text style={[styles.playlistName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-          <Text style={[styles.playlistMeta, { color: colors.textSecondary }]}>
-            {item.trackCount}首{item.playCount > 0 ? ` · ${formatPlayCount(item.playCount)}次播放` : ''}
-          </Text>
-        </View>
-        <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textTertiary} />
-      </TouchableOpacity>
-    ));
+    return (
+      <FlatList
+        data={displayPlaylists}
+        keyExtractor={(item) => String(item.id)}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={[styles.playlistCard, { borderBottomColor: colors.divider }]}
+            onPress={() => navigation.navigate('PlaylistDetail', { id: item.id })}
+            onLongPress={() => handleDeletePlaylist(item.id, item.name)}
+            activeOpacity={0.6}
+          >
+            <NetworkImage uri={item.coverImgUrl} style={styles.playlistCover} />
+            <View style={styles.playlistInfo}>
+              <Text style={[styles.playlistName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+              <Text style={[styles.playlistMeta, { color: colors.textSecondary }]}>
+                {item.trackCount}首{item.playCount > 0 ? ` · ${formatPlayCount(item.playCount)}次播放` : ''}
+              </Text>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textTertiary} />
+          </TouchableOpacity>
+        )}
+        scrollEnabled={false}
+        initialNumToRender={10}
+        maxToRenderPerBatch={5}
+        windowSize={3}
+        removeClippedSubviews={true}
+      />
+    );
   };
 
   // ─── Listening Record ───
@@ -762,12 +780,16 @@ function createStyles(colors: any) {
     },
 
     // ─── Quick Menu ───
+    quickMenuScroll: {
+      marginBottom: Spacing.sm,
+    },
     quickMenuGrid: {
       flexDirection: 'row',
-      justifyContent: 'space-between',
+      gap: 10,
+      paddingHorizontal: Spacing.xs,
     },
     quickMenuCard: {
-      width: '23%',
+      width: 80,
       alignItems: 'center',
       paddingVertical: Spacing.md,
       borderRadius: BorderRadius.lg,

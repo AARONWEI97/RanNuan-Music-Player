@@ -31,15 +31,17 @@ export default function MiniPlayer({ onPress }: MiniPlayerProps) {
   const progressPercent = duration > 0 ? currentProgress / duration : 0;
 
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.7} style={styles.container}>
-      {/* 底层进度条背景 */}
+    <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={styles.container}>
+      {/* Progress bar — ultra-thin, spans full width */}
       <View style={styles.progressTrack}>
         <View style={[styles.progressFill, { width: `${Math.min(progressPercent * 100, 100)}%` }]} />
       </View>
 
       <View style={styles.content}>
+        {/* Cover art */}
         <NetworkImage uri={coverUrl} style={styles.cover} />
 
+        {/* Song info */}
         <View style={styles.info}>
           <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
             {playMusic.name}
@@ -49,27 +51,30 @@ export default function MiniPlayer({ onPress }: MiniPlayerProps) {
           </Text>
         </View>
 
-        <TouchableOpacity onPress={togglePlayback} style={styles.controlBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <View style={styles.playBtnCircle}>
+        {/* Play / Pause */}
+        <TouchableOpacity onPress={togglePlayback} style={styles.controlBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <View style={[styles.playBtnCircle, isPlay && styles.playBtnActive]}>
             {isLoading ? (
-              <ActivityIndicator size="small" color="#fff" />
+              <ActivityIndicator size="small" color={isPlay ? '#fff' : colors.primary} />
             ) : (
               <MaterialCommunityIcons
                 name={isPlay ? 'pause' : 'play'}
-                size={22}
-                color="#fff"
+                size={20}
+                color={isPlay ? '#fff' : colors.primary}
                 style={!isPlay ? { marginLeft: 2 } : undefined}
               />
             )}
           </View>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={next} style={styles.controlBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <MaterialCommunityIcons name="skip-next" size={24} color={colors.text} />
+        {/* Next */}
+        <TouchableOpacity onPress={next} style={styles.controlBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <MaterialCommunityIcons name="skip-next" size={22} color={colors.textSecondary} />
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => setShowPlaylistDrawer(true)} style={styles.controlBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <MaterialCommunityIcons name="playlist-music" size={22} color={colors.textSecondary} />
+        {/* Playlist */}
+        <TouchableOpacity onPress={() => setShowPlaylistDrawer(true)} style={styles.controlBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <MaterialCommunityIcons name="playlist-music" size={20} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
@@ -78,67 +83,73 @@ export default function MiniPlayer({ onPress }: MiniPlayerProps) {
 
 function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   return StyleSheet.create({
-  container: {
-    backgroundColor: colors.miniPlayerBg,
-    borderRadius: BorderRadius.xl,
-    overflow: 'hidden',
-    // 阴影（iOS）
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    // 阴影（Android）
-    elevation: 4,
-  },
-  progressTrack: {
-    height: 2,
-    backgroundColor: colors.divider,
-  },
-  progressFill: {
-    height: 2,
-    backgroundColor: colors.primary,
-  },
-  content: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingLeft: Spacing.md,
-    paddingRight: Spacing.sm,
-    paddingVertical: 8,
-  },
-  cover: {
-    width: 42,
-    height: 42,
-    borderRadius: BorderRadius.md,
-    backgroundColor: colors.surfaceVariant,
-  },
-  info: {
-    flex: 1,
-    marginLeft: Spacing.md,
-    marginRight: Spacing.sm,
-  },
-  name: {
-    ...Typography.body2,
-    color: colors.text,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  artist: {
-    ...Typography.caption,
-    color: colors.textSecondary,
-    fontSize: 11,
-  },
-  playBtnCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  controlBtn: {
-    padding: Spacing.xs,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+    container: {
+      backgroundColor: colors.miniPlayerBg,
+      borderRadius: BorderRadius.lg,
+      overflow: 'hidden',
+      // Shadow
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.15,
+      shadowRadius: 12,
+      elevation: 6,
+    },
+    progressTrack: {
+      height: 2,
+      backgroundColor: 'rgba(255,255,255,0.06)',
+    },
+    progressFill: {
+      height: 2,
+      backgroundColor: colors.primary,
+      borderRadius: 1,
+    },
+    content: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingLeft: Spacing.md,
+      paddingRight: Spacing.sm,
+      paddingVertical: Spacing.sm,
+    },
+    cover: {
+      width: 46,
+      height: 46,
+      borderRadius: BorderRadius.md,
+      backgroundColor: colors.surfaceVariant,
+    },
+    info: {
+      flex: 1,
+      marginLeft: Spacing.md,
+      marginRight: Spacing.sm,
+    },
+    name: {
+      ...Typography.body2,
+      color: colors.text,
+      fontWeight: '600',
+      marginBottom: 1,
+    },
+    artist: {
+      ...Typography.caption,
+      color: colors.textSecondary,
+      fontSize: 11,
+    },
+    playBtnCircle: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      borderWidth: 1.5,
+      borderColor: colors.primary,
+      backgroundColor: 'transparent',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    playBtnActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    controlBtn: {
+      padding: Spacing.xs,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
   });
 }

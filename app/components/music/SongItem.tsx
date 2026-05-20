@@ -1,6 +1,5 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, memo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppTheme } from '../../theme/ThemeContext';
 import { Spacing, BorderRadius } from '../../theme/spacing';
 import { Typography } from '../../theme/typography';
@@ -16,7 +15,7 @@ interface SongItemProps {
   index?: number;
 }
 
-export default function SongItem({ song, isActive = false, onPress, onMorePress, index }: SongItemProps) {
+const SongItem = memo(function SongItem({ song, isActive = false, onPress, onMorePress, index }: SongItemProps) {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const artistName = song.ar?.map((a) => a.name).join(' / ') || '未知歌手';
@@ -66,7 +65,14 @@ export default function SongItem({ song, isActive = false, onPress, onMorePress,
       )}
     </TouchableOpacity>
   );
-}
+}, (prev, next) => {
+  // 只在关键 props 变化时重渲染，忽略 onPress/onMorePress 引用变化
+  return prev.song.id === next.song.id
+    && prev.isActive === next.isActive
+    && prev.index === next.index;
+});
+
+export default SongItem;
 
 function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   return StyleSheet.create({

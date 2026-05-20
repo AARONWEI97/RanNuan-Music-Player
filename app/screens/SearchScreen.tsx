@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Dimensions,
   FlatList,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -27,6 +28,9 @@ import { SEARCH_TYPE_SONG, SEARCH_TYPE_ALBUM, SEARCH_TYPE_ARTIST, SEARCH_TYPE_PL
 import type { SongResult, RootStackScreenProps } from '../types';
 import SongList from '../components/music/SongList';
 import NetworkImage from '../components/common/NetworkImage';
+import SongActionSheet from '../components/music/SongActionSheet';
+import CommentList from '../components/comment/CommentList';
+import { useSongActionSheet } from '../hooks/useSongActionSheet';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = (SCREEN_WIDTH - 48) / 3;
@@ -224,6 +228,8 @@ export default function SearchScreen() {
     playSong(song);
   }, [searchResults, playAll, playSong]);
 
+  const { actionSong, showSheet, actionItems, handlePress: handleSongMore, handleClose, commentSongId, showComments, setShowComments } = useSongActionSheet();
+
   const handleTabPress = useCallback((type: number) => {
     setActiveTab(type);
     if (keyword.trim() && type !== SEARCH_TYPE_SONG) {
@@ -383,6 +389,7 @@ export default function SearchScreen() {
           <SongList
             songs={searchResults}
             onSongPress={handleSongPress}
+            onSongMorePress={handleSongMore}
             currentSongId={undefined}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
@@ -395,12 +402,17 @@ export default function SearchScreen() {
       case SEARCH_TYPE_ARTIST:
         return (
           <FlatList
+            key="artist-grid"
             data={artists}
             renderItem={renderArtistCard}
             keyExtractor={(item) => String(item.id)}
             numColumns={3}
             columnWrapperStyle={styles.row}
             contentContainerStyle={styles.gridContent}
+            initialNumToRender={9}
+            maxToRenderPerBatch={6}
+            windowSize={3}
+            removeClippedSubviews={true}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Text style={[styles.emptyText, { color: colors.textSecondary }]}>暂无搜索结果</Text>
@@ -412,12 +424,17 @@ export default function SearchScreen() {
       case SEARCH_TYPE_ALBUM:
         return (
           <FlatList
+            key="album-grid"
             data={albums}
             renderItem={renderAlbumCard}
             keyExtractor={(item) => String(item.id)}
             numColumns={3}
             columnWrapperStyle={styles.row}
             contentContainerStyle={styles.gridContent}
+            initialNumToRender={9}
+            maxToRenderPerBatch={6}
+            windowSize={3}
+            removeClippedSubviews={true}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Text style={[styles.emptyText, { color: colors.textSecondary }]}>暂无搜索结果</Text>
@@ -429,12 +446,17 @@ export default function SearchScreen() {
       case SEARCH_TYPE_PLAYLIST:
         return (
           <FlatList
+            key="playlist-grid"
             data={playlists}
             renderItem={renderPlaylistCard}
             keyExtractor={(item) => String(item.id)}
             numColumns={3}
             columnWrapperStyle={styles.row}
             contentContainerStyle={styles.gridContent}
+            initialNumToRender={9}
+            maxToRenderPerBatch={6}
+            windowSize={3}
+            removeClippedSubviews={true}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Text style={[styles.emptyText, { color: colors.textSecondary }]}>暂无搜索结果</Text>
@@ -469,6 +491,19 @@ export default function SearchScreen() {
           {renderHistory()}
         </ScrollView>
       )}
+      <SongActionSheet visible={showSheet} song={actionSong} actions={actionItems} onClose={handleClose} />
+      <Modal visible={showComments} animationType="slide" onRequestClose={() => setShowComments(false)}>
+        <View style={[styles.commentModal, { backgroundColor: colors.background, paddingTop: insets.top }]}>
+          <View style={styles.commentHeader}>
+            <TouchableOpacity onPress={() => setShowComments(false)}>
+              <MaterialCommunityIcons name="chevron-left" size={26} color={colors.text} />
+            </TouchableOpacity>
+            <Text style={[styles.commentTitle, { color: colors.text }]}>歌曲评论</Text>
+            <View style={{ width: 40 }} />
+          </View>
+          <CommentList songId={Number(commentSongId)} type="music" />
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -672,5 +707,8 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     ...Typography.overline,
     marginTop: 2,
   },
+  commentModal: { flex: 1 },
+  commentHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, paddingBottom: Spacing.sm },
+  commentTitle: { flex: 1, fontSize: 18, fontWeight: '700', textAlign: 'center' },
   });
 }

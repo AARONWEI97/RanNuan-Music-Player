@@ -1,11 +1,10 @@
-const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
+const { getDefaultConfig, mergeConfig } = require('@expo/metro/metro-config');
 
 const defaultConfig = getDefaultConfig(__dirname);
 
 const BLOCKED_MODULES = [
   '@react-native/debugger-frontend',
   'web-streams-polyfill',
-  'react-native-track-player',
 ];
 
 const config = {

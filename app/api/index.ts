@@ -88,6 +88,20 @@ export {
 } from './album';
 
 export {
+  getMusicComment,
+  getPlaylistComment,
+  getAlbumComment,
+  getMvComment,
+  getHotComment,
+  getFloorComment,
+  sendComment,
+  likeComment,
+  getHotwallComment,
+  getUserCommentHistory,
+  getEventComment,
+} from './comment';
+
+export {
   getTopMv,
   getAllMv,
   getMvDetail,

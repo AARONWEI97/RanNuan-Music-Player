@@ -19,6 +19,11 @@ export type RootStackParamList = {
   Login: undefined;
   Download: undefined;
   PlaylistImport: undefined;
+  LikedSongs: undefined;
+  History: undefined;
+  Comment: { id: number; type: 'music' | 'playlist' | 'album' | 'mv' };
+  LocalMusic: undefined;
+  Heatmap: undefined;
 };
 
 export type RootStackScreenProps<T extends keyof RootStackParamList> =

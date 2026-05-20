@@ -1,37 +1,44 @@
 import { Platform } from 'react-native';
-import { Audio } from 'expo-av';
-import type { AVPlaybackStatus, AVPlaybackStatusSuccess } from 'expo-av';
+import TrackPlayer, {
+  Event,
+  Capability,
+  State,
+  type Track,
+} from 'react-native-track-player';
 import type { SongResult } from '../types';
 
-type Track = {
-  id: string;
-  url: string;
-  title: string;
-  artist: string;
-  album: string;
-  artwork?: string;
-  duration: number;
-};
-
 type ProgressUpdate = {
-  position: number;   // seconds
-  duration: number;   // seconds
+  position: number;
+  duration: number;
   isPlaying: boolean;
 };
 
-let soundRef: Audio.Sound | null = null;
-let currentTrackId: string | null = null;
+// ==================== 全局持久化标志 ====================
+// ★ 热更新会重新执行模块，导致 module-level 变量重置
+// 使用 global 对象存储标志，防止事件监听器重复注册
+const _g = global as any;
+if (!_g.__TP_LISTENERS_REGISTERED) _g.__TP_LISTENERS_REGISTERED = false;
+if (!_g.__TP_IS_SETUP) _g.__TP_IS_SETUP = false;
+
+// ==================== 回调注册 ====================
 let onPlaybackEndCallback: (() => void) | null = null;
 let onProgressUpdateCallback: ((update: ProgressUpdate) => void) | null = null;
+let onReloadAndPlayCallback: (() => Promise<void>) | null = null;
+let onRemoteNextCallback: (() => void) | null = null;
+let onRemotePrevCallback: (() => void) | null = null;
+let onRemotePlayCallback: (() => void) | null = null;
+let onRemotePauseCallback: (() => void) | null = null;
+
 let playGeneration = 0;
-let hasEndedFlag = false;
+let setupPromise: Promise<void> | null = null;
+let endPollTimer: ReturnType<typeof setInterval> | null = null;
+let lastKnownPosition = 0;
 let lastKnownDuration = 0;
-let endCheckTimer: ReturnType<typeof setInterval> | null = null;
-let isHighFreq = false;
 
 export const isPlayerAvailable = Platform.OS !== 'web';
 
 export function setOnPlaybackEnd(callback: (() => void) | null) {
+  console.log('[TP] setOnPlaybackEnd:', callback ? '设置回调' : '清除回调');
   onPlaybackEndCallback = callback;
 }
 
@@ -39,19 +46,314 @@ export function setOnProgressUpdate(callback: ((update: ProgressUpdate) => void)
   onProgressUpdateCallback = callback;
 }
 
-export async function setupPlayer(): Promise<void> {
-  try {
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      staysActiveInBackground: true,
-      playsInSilentModeIOS: true,
-      shouldDuckAndroid: true,
-      playThroughEarpieceAndroid: false,
-    });
-  } catch (e) {
-    console.warn('Audio mode setup error:', e);
+export function setOnReloadAndPlay(callback: (() => Promise<void>) | null) {
+  console.log('[TP] setOnReloadAndPlay:', callback ? '设置回调' : '清除回调');
+  onReloadAndPlayCallback = callback;
+}
+
+export function setOnRemoteNext(callback: (() => void) | null) {
+  console.log('[TP] setOnRemoteNext:', callback ? '设置回调' : '清除回调');
+  onRemoteNextCallback = callback;
+}
+
+export function setOnRemotePrev(callback: (() => void) | null) {
+  console.log('[TP] setOnRemotePrev:', callback ? '设置回调' : '清除回调');
+  onRemotePrevCallback = callback;
+}
+
+export function setOnRemotePlay(callback: (() => void) | null) {
+  console.log('[TP] setOnRemotePlay:', callback ? '设置回调' : '清除回调');
+  onRemotePlayCallback = callback;
+}
+
+export function setOnRemotePause(callback: (() => void) | null) {
+  console.log('[TP] setOnRemotePause:', callback ? '设置回调' : '清除回调');
+  onRemotePauseCallback = callback;
+}
+
+// ==================== 播放结束检测 ====================
+
+let isHandlingEnd = false;
+let handlingEndTimer: ReturnType<typeof setTimeout> | null = null;
+
+function triggerPlaybackEnd(source: string) {
+  if (isHandlingEnd) {
+    console.log(`[TP] 播放结束回调正在执行中，忽略来自 ${source} 的重复触发`);
+    return;
+  }
+  isHandlingEnd = true;
+  console.log(`[TP] ★★★ 播放结束触发 (来源: ${source}) ★★★`);
+  onPlaybackEndCallback?.();
+
+  // ★ 60秒兜底超时 — 正常情况下 resetPlaybackEndState() 会在新 track 加载时立即重置
+  // 之前 8s：后台播放时 GDMusic/joox 网络请求可能超过 8s，超时后
+  //   isHandlingEnd 提前重置 → 轮询再次触发 triggerPlaybackEnd → 级联切歌
+  // 使用 60s 长超时作为异常兜底，正常流程由 resetPlaybackEndState() 驱动
+  if (handlingEndTimer) clearTimeout(handlingEndTimer);
+  handlingEndTimer = setTimeout(() => {
+    isHandlingEnd = false;
+    handlingEndTimer = null;
+    console.log('[TP] isHandlingEnd 安全超时重置（异常兜底）');
+  }, 60000);
+}
+
+/** 新歌曲开始播放时，重置播放结束检测状态 */
+function resetPlaybackEndState() {
+  isHandlingEnd = false;
+  if (handlingEndTimer) {
+    clearTimeout(handlingEndTimer);
+    handlingEndTimer = null;
   }
 }
+
+// ==================== 事件监听器 ====================
+
+/**
+ * 注册 TrackPlayer 事件监听器（主 app 上下文）
+ * ★ 包含 Remote 事件监听 — 这是通知栏/灵动岛/锁屏按钮的主要处理点
+ * ★ 使用 global 标志防止热更新后重复注册
+ */
+function registerEventListeners() {
+  if (_g.__TP_LISTENERS_REGISTERED) {
+    console.log('[TP] 事件监听已注册，跳过');
+    return;
+  }
+  _g.__TP_LISTENERS_REGISTERED = true;
+  console.log('[TP] 注册事件监听器');
+
+  // ========== PlaybackState ==========
+  let lastTpState: State | null = null;
+  TrackPlayer.addEventListener(Event.PlaybackState, ({ state }) => {
+    // ★ 精简日志：只在状态变化时输出
+    if (state !== lastTpState) {
+      const stateName = Object.entries(State).find(([, v]) => v === state)?.[0] || String(state);
+      console.log(`[TP] PlaybackState: ${stateName}`);
+      lastTpState = state;
+    }
+
+    if (state === State.Ended) {
+      triggerPlaybackEnd('PlaybackState.Ended');
+    } else if (state === State.Loading || state === State.Playing) {
+      // ★ 新歌曲开始加载/播放 → 重置播放结束检测状态
+      // 防止轮询残留的 Ended 状态在新歌播放后再次触发
+      resetPlaybackEndState();
+    }
+
+    onProgressUpdateCallback?.({
+      position: lastKnownPosition,
+      duration: lastKnownDuration,
+      isPlaying: state === State.Playing,
+    });
+  });
+
+  // ========== PlaybackProgressUpdated ==========
+  TrackPlayer.addEventListener(Event.PlaybackProgressUpdated, ({ position, duration }) => {
+    lastKnownPosition = position;
+    lastKnownDuration = duration;
+    onProgressUpdateCallback?.({ position, duration, isPlaying: true });
+  });
+
+  // ========== ActiveTrackChanged ==========
+  TrackPlayer.addEventListener(Event.PlaybackActiveTrackChanged, ({ track, index }) => {
+    console.log(`[TP] ActiveTrackChanged: index=${index}, track=${track ? track.title : 'null'}`);
+    if (!track && index === undefined) {
+      triggerPlaybackEnd('ActiveTrackChanged(track=null)');
+    }
+  });
+
+  // ========== PlaybackError ==========
+  TrackPlayer.addEventListener(Event.PlaybackError, ({ message }) => {
+    console.error('[TP] PlaybackError:', message);
+  });
+
+  // ========== RemotePlay ==========
+  // ★★★ PlaybackService 已直接调用 play()（零延迟）★★★
+  // 这里只处理「无 track 需要重载」的特殊情况
+  // 不做 getPlaybackState() 预检查，避免 bridge 竞争
+  TrackPlayer.addEventListener(Event.RemotePlay, async () => {
+    console.log('[TP-Remote] RemotePlay');
+    try {
+      onRemotePlayCallback?.();
+    } catch (e) {
+      console.error('[TP-Remote] RemotePlay 错误:', e);
+    }
+  });
+
+  // ========== RemotePause ==========
+  // ★★★ PlaybackService 已直接调用 pause()（零延迟）★★★
+  TrackPlayer.addEventListener(Event.RemotePause, async () => {
+    console.log('[TP-Remote] RemotePause');
+    try {
+      onRemotePauseCallback?.();
+    } catch (e) {
+      console.error('[TP-Remote] RemotePause 错误:', e);
+    }
+  });
+
+  // ========== RemoteNext ==========
+  TrackPlayer.addEventListener(Event.RemoteNext, async () => {
+    console.log('[TP-Remote] RemoteNext');
+    try {
+      if (onRemoteNextCallback) {
+        onRemoteNextCallback();
+      } else {
+        await TrackPlayer.skipToNext();
+      }
+    } catch (e) {
+      console.error('[TP-Remote] RemoteNext 错误:', e);
+      try { await TrackPlayer.skipToNext(); } catch {}
+    }
+  });
+
+  // ========== RemotePrevious ==========
+  TrackPlayer.addEventListener(Event.RemotePrevious, async () => {
+    console.log('[TP-Remote] RemotePrevious');
+    try {
+      if (onRemotePrevCallback) {
+        onRemotePrevCallback();
+      } else {
+        await TrackPlayer.skipToPrevious();
+      }
+    } catch (e) {
+      console.error('[TP-Remote] RemotePrevious 错误:', e);
+      try { await TrackPlayer.skipToPrevious(); } catch {}
+    }
+  });
+
+  // ========== RemoteSeek ==========
+  TrackPlayer.addEventListener(Event.RemoteSeek, ({ position }) => {
+    TrackPlayer.seekTo(position);
+  });
+
+  // ========== RemoteStop ==========
+  TrackPlayer.addEventListener(Event.RemoteStop, () => {
+    TrackPlayer.reset();
+  });
+
+  // ========== RemoteDuck ==========
+  TrackPlayer.addEventListener(Event.RemoteDuck, async ({ paused }) => {
+    if (paused) {
+      await TrackPlayer.pause();
+    } else {
+      await TrackPlayer.play();
+    }
+  });
+
+  startEndPolling();
+}
+
+function startEndPolling() {
+  stopEndPolling();
+  console.log('[TP] 启动播放结束轮询检测 (5秒间隔)');
+
+  endPollTimer = setInterval(async () => {
+    try {
+      // ★ 合并为一次 bridge 调用：先 getProgress（轻量），
+      // 再根据 progress 判断是否需要 getPlaybackState
+      const progress = await TrackPlayer.getProgress();
+
+      // 快速路径：进度未接近结束，不需要检查状态
+      if (progress.duration <= 0 || progress.position < progress.duration - 2) {
+        return;
+      }
+
+      // 进度接近结束，检查播放状态
+      const state = await TrackPlayer.getPlaybackState();
+
+      if (state.state === State.Ended) {
+        triggerPlaybackEnd('轮询-State.Ended');
+        return;
+      }
+
+      if (
+        progress.position >= progress.duration - 0.5 &&
+        state.state !== State.Buffering &&
+        state.state !== State.Paused
+      ) {
+        console.log(`[TP] 轮询检测到播放接近结束: pos=${progress.position.toFixed(1)}, dur=${progress.duration.toFixed(1)}`);
+        triggerPlaybackEnd('轮询-position>=duration');
+      }
+    } catch {}
+  }, 5000);
+}
+
+function stopEndPolling() {
+  if (endPollTimer) {
+    clearInterval(endPollTimer);
+    endPollTimer = null;
+  }
+}
+
+// ==================== 播放器生命周期 ====================
+
+export async function setupPlayer(): Promise<void> {
+  console.log(`[TP] setupPlayer 调用, isSetup=${_g.__TP_IS_SETUP}`);
+
+  if (_g.__TP_IS_SETUP) {
+    registerEventListeners();
+    return;
+  }
+
+  if (setupPromise) {
+    return setupPromise;
+  }
+
+  setupPromise = (async () => {
+    try {
+      try {
+        await TrackPlayer.setupPlayer();
+        console.log('[TP] setupPlayer 成功');
+      } catch (setupError: any) {
+        if (setupError?.message?.includes('already been initialized')) {
+          console.log('[TP] 播放器已初始化，跳过');
+        } else {
+          console.error('[TP] setupPlayer 错误:', setupError);
+          throw setupError;
+        }
+      }
+
+      await TrackPlayer.updateOptions({
+        capabilities: [
+          Capability.Play,
+          Capability.Pause,
+          Capability.SkipToNext,
+          Capability.SkipToPrevious,
+          Capability.SeekTo,
+        ],
+        // ★ 紧凑通知/Now Bar(灵动岛) 显示的按钮
+        // 最多3个：上一首 + 播放/暂停 + 下一首
+        compactCapabilities: [
+          Capability.SkipToPrevious,
+          Capability.Play,
+          Capability.Pause,
+          Capability.SkipToNext,
+        ],
+        notificationCapabilities: [
+          Capability.Play,
+          Capability.Pause,
+          Capability.SkipToNext,
+          Capability.SkipToPrevious,
+          Capability.SeekTo,
+        ],
+        progressUpdateEventInterval: 1,
+        // ★ Android 通知栏主题色（与应用主色 #023c69 一致）
+        color: 0x023c69,
+      });
+      console.log('[TP] updateOptions 完成');
+
+      _g.__TP_IS_SETUP = true;
+      registerEventListeners();
+      console.log('[TP] 初始化完成');
+    } catch (e) {
+      console.error('[TP] setup error:', e);
+      setupPromise = null;
+    }
+  })();
+
+  return setupPromise;
+}
+
+// ==================== 播放控制 ====================
 
 export function songToTrack(song: SongResult, url: string): Track {
   return {
@@ -61,308 +363,132 @@ export function songToTrack(song: SongResult, url: string): Track {
     artist: song.ar?.map((a: any) => a.name).join(' / ') || '未知歌手',
     album: song.al?.name || '未知专辑',
     artwork: song.picUrl || song.al?.picUrl || undefined,
-    duration: song.duration || song.dt || 0,
+    duration: (song.duration || song.dt || 0) / 1000,
   };
-}
-
-function isSuccessStatus(status: AVPlaybackStatus): status is AVPlaybackStatusSuccess {
-  return status.isLoaded;
-}
-
-/**
- * 启动定时轮询检测歌曲结束（expo-av 的 didJustFinish 在部分设备上不可靠）
- * 智能频率：歌曲前 80% 每 3 秒检查一次，接近末尾时每 1 秒检查一次
- */
-function startEndCheck() {
-  stopEndCheck();
-  isHighFreq = false;
-  endCheckTimer = setInterval(async () => {
-    if (!soundRef || hasEndedFlag) return;
-    try {
-      const status = await soundRef.getStatusAsync();
-
-      if (!status.isLoaded) {
-        hasEndedFlag = true;
-        onPlaybackEndCallback?.();
-        stopEndCheck();
-        return;
-      }
-
-      if (!status.durationMillis || status.isLooping) return;
-
-      if (status.durationMillis > 0) {
-        lastKnownDuration = status.durationMillis / 1000;
-      }
-
-      if (status.positionMillis >= status.durationMillis - 200) {
-        hasEndedFlag = true;
-        onPlaybackEndCallback?.();
-        stopEndCheck();
-      }
-    } catch {}
-  }, 3000);
-}
-
-/** 接近歌曲末尾时切换到高频检测 */
-function speedUpEndCheck() {
-  if (!endCheckTimer || !soundRef || hasEndedFlag || isHighFreq) return;
-  isHighFreq = true;
-  stopEndCheck();
-  endCheckTimer = setInterval(async () => {
-    if (!soundRef || hasEndedFlag) return;
-    try {
-      const status = await soundRef.getStatusAsync();
-
-      if (!status.isLoaded) {
-        hasEndedFlag = true;
-        onPlaybackEndCallback?.();
-        stopEndCheck();
-        return;
-      }
-
-      if (!status.durationMillis || status.isLooping) return;
-      if (status.positionMillis >= status.durationMillis - 200) {
-        hasEndedFlag = true;
-        onPlaybackEndCallback?.();
-        stopEndCheck();
-      }
-    } catch {}
-  }, 1000);
-}
-
-function stopEndCheck() {
-  if (endCheckTimer) {
-    clearInterval(endCheckTimer);
-    endCheckTimer = null;
-  }
-}
-
-function handlePlaybackStatusUpdate(status: AVPlaybackStatus) {
-  if (!isSuccessStatus(status)) return;
-
-  // 实时进度回调
-  if (onProgressUpdateCallback && status.isPlaying) {
-    const position = status.positionMillis / 1000;
-    const duration = status.durationMillis ? status.durationMillis / 1000 : 0;
-    if (duration > 0) lastKnownDuration = duration;
-    onProgressUpdateCallback({ position, duration, isPlaying: true });
-
-    // 智能提速：播放进度超过 80% 时切换到 1 秒高频检测
-    if (status.durationMillis && status.positionMillis >= status.durationMillis * 0.8) {
-      speedUpEndCheck();
-    }
-  } else if (status.durationMillis && status.durationMillis > 0) {
-    lastKnownDuration = status.durationMillis / 1000;
-  }
-
-  if (hasEndedFlag) return;
-
-  // 检测1: didJustFinish
-  if (status.didJustFinish && !status.isLooping) {
-    hasEndedFlag = true;
-    onPlaybackEndCallback?.();
-    return;
-  }
-
-  // 检测2: 进度到达末尾 + 不在播放
-  if (
-    status.durationMillis &&
-    status.durationMillis > 0 &&
-    status.positionMillis >= status.durationMillis - 300 &&
-    !status.isPlaying &&
-    !status.isLooping
-  ) {
-    hasEndedFlag = true;
-    onPlaybackEndCallback?.();
-    return;
-  }
-
-  // 检测3: position >= duration
-  if (
-    status.durationMillis &&
-    status.durationMillis > 0 &&
-    status.positionMillis >= status.durationMillis &&
-    !status.isLooping
-  ) {
-    hasEndedFlag = true;
-    onPlaybackEndCallback?.();
-    return;
-  }
 }
 
 export async function playSong(song: SongResult, url: string): Promise<void> {
   const thisGeneration = ++playGeneration;
-  hasEndedFlag = false;
-  lastKnownDuration = 0;
+  console.log(`[TP] playSong: "${song.name}" (gen=${thisGeneration})`);
+
+  // ★ 新歌播放 → 立即重置播放结束检测，防止级联触发
+  resetPlaybackEndState();
+
   try {
-    // 同一首歌且 soundRef 存在 → 直接播放
-    if (soundRef && currentTrackId === String(song.id)) {
-      hasEndedFlag = false;
-      await soundRef.setStatusAsync({ shouldPlay: true, positionMillis: 0 });
-      startEndCheck();
-      return;
-    }
-
-    // 卸载旧音频 + 停止旧轮询
-    stopEndCheck();
-    if (soundRef) {
-      await soundRef.unloadAsync();
-      soundRef = null;
-    }
-
-    // 检查是否有更新的播放请求
-    if (thisGeneration !== playGeneration) return;
-
-    const { sound } = await Audio.Sound.createAsync(
-      { uri: url },
-      { shouldPlay: true },
-      handlePlaybackStatusUpdate,
-    );
-
+    // ★ 使用 load() 替代 reset()+add()+play()
+    // load() 是 RNTP v4 提供的替换单曲 API：
+    //   - 不需要 reset，直接替换当前 track
+    //   - 自动开始播放（playWhenReady 默认 true）
+    //   - 在后台也能正常工作
+    //   - 避免了 reset 后需要重新 prepare 的问题
+    const track = songToTrack(song, url);
+    await TrackPlayer.load(track);
     if (thisGeneration !== playGeneration) {
-      await sound.unloadAsync();
+      await TrackPlayer.reset();
       return;
     }
 
-    soundRef = sound;
-    currentTrackId = String(song.id);
-    startEndCheck();
+    // 确保 playWhenReady = true，使播放器准备就绪后自动播放
+    await TrackPlayer.setPlayWhenReady(true);
+    console.log(`[TP] playSong 成功: "${song.name}" (gen=${thisGeneration})`);
   } catch (e) {
-    console.warn('playSong error:', e);
+    console.warn(`[TP] playSong error (gen=${thisGeneration}):`, e);
+    // 回退方案：如果 load() 失败，尝试 reset+add+play
+    try {
+      await TrackPlayer.reset();
+      if (thisGeneration !== playGeneration) return;
+      const track = songToTrack(song, url);
+      await TrackPlayer.add(track);
+      if (thisGeneration !== playGeneration) {
+        await TrackPlayer.reset();
+        return;
+      }
+      await TrackPlayer.play();
+      console.log(`[TP] playSong 回退成功: "${song.name}" (gen=${thisGeneration})`);
+    } catch (e2) {
+      console.warn(`[TP] playSong fallback error (gen=${thisGeneration}):`, e2);
+    }
   }
 }
 
-export async function addToQueue(): Promise<void> {}
-export async function playNext(): Promise<void> {}
-
 export async function togglePlayback(): Promise<void> {
-  if (!soundRef) return;
   try {
-    const status = await soundRef.getStatusAsync();
-    if (isSuccessStatus(status)) {
-      if (status.isPlaying) {
-        await soundRef.pauseAsync();
-      } else {
-        await soundRef.playAsync();
-      }
+    const state = await TrackPlayer.getPlaybackState();
+    const stateName = Object.entries(State).find(([, v]) => v === state.state)?.[0] || String(state.state);
+    console.log(`[TP] togglePlayback, 当前状态: ${stateName}`);
+
+    if (state.state === State.None || state.state === State.Stopped || state.state === State.Ended) {
+      console.log('[TP] togglePlayback: 无 track/已停止/已结束，调用 onReloadAndPlay');
+      await onReloadAndPlayCallback?.();
+      return;
+    }
+
+    if (state.state === State.Playing) {
+      await TrackPlayer.pause();
+      console.log('[TP] → pause');
+    } else {
+      await TrackPlayer.play();
+      console.log('[TP] → play');
     }
   } catch (e) {
-    console.warn('togglePlayback error:', e);
+    console.warn('[TP] togglePlayback error:', e);
   }
 }
 
 export async function seekTo(position: number): Promise<void> {
-  if (!soundRef) return;
   try {
-    await soundRef.setPositionAsync(position * 1000);
+    const state = await TrackPlayer.getPlaybackState();
+    if (state.state === State.None || state.state === State.Stopped) {
+      console.log('[TP] seekTo: 无 track，先调用 onReloadAndPlay');
+      await onReloadAndPlayCallback?.();
+      await TrackPlayer.seekTo(position);
+      return;
+    }
+    console.log(`[TP] seekTo: ${position}s`);
+    await TrackPlayer.seekTo(position);
   } catch (e) {
-    console.warn('seekTo error:', e);
+    console.warn('[TP] seekTo error:', e);
   }
 }
 
 export async function setPlaybackRate(rate: number): Promise<void> {
-  if (!soundRef) return;
-  try {
-    await soundRef.setRateAsync(rate, true);
-  } catch (e) {
-    console.warn('setPlaybackRate error:', e);
-  }
+  try { await TrackPlayer.setRate(rate); } catch (e) { console.warn('[TP] setPlaybackRate error:', e); }
 }
 
 export async function setVolume(volume: number): Promise<void> {
-  if (!soundRef) return;
-  try {
-    await soundRef.setVolumeAsync(volume);
-  } catch (e) {
-    console.warn('setVolume error:', e);
-  }
+  try { await TrackPlayer.setVolume(volume); } catch (e) { console.warn('[TP] setVolume error:', e); }
 }
 
-export async function skipToNext(): Promise<void> {}
-export async function skipToPrevious(): Promise<void> {}
-
-export async function getPlayerState(): Promise<string | undefined> {
-  if (!soundRef) return undefined;
-  try {
-    const status = await soundRef.getStatusAsync();
-    if (isSuccessStatus(status)) {
-      return status.isPlaying ? 'playing' : 'paused';
-    }
-    return undefined;
-  } catch {
-    return undefined;
-  }
+export async function skipToNext(): Promise<void> {
+  try { await TrackPlayer.skipToNext(); } catch (e) { console.warn('[TP] skipToNext error:', e); }
 }
 
-export async function getCurrentPosition(): Promise<number> {
-  if (!soundRef) return 0;
-  try {
-    const status = await soundRef.getStatusAsync();
-    if (isSuccessStatus(status)) {
-      return status.positionMillis / 1000;
-    }
-    return 0;
-  } catch {
-    return 0;
-  }
-}
-
-export async function getBufferedPosition(): Promise<number> {
-  if (!soundRef) return 0;
-  try {
-    const status = await soundRef.getStatusAsync();
-    if (isSuccessStatus(status) && status.playableDurationMillis) {
-      return status.playableDurationMillis / 1000;
-    }
-    return 0;
-  } catch {
-    return 0;
-  }
-}
-
-export async function getDuration(): Promise<number> {
-  if (!soundRef) return 0;
-  try {
-    const status = await soundRef.getStatusAsync();
-    if (isSuccessStatus(status) && status.durationMillis) {
-      return status.durationMillis / 1000;
-    }
-    return 0;
-  } catch {
-    return 0;
-  }
-}
-
-export function getSoundRef(): Audio.Sound | null {
-  return soundRef;
-}
-
-export function hasSoundRef(): boolean {
-  return soundRef !== null;
+export async function skipToPrevious(): Promise<void> {
+  try { await TrackPlayer.skipToPrevious(); } catch (e) { console.warn('[TP] skipToPrevious error:', e); }
 }
 
 export async function stopPlayback(): Promise<void> {
-  stopEndCheck();
-  if (soundRef) {
-    try {
-      await soundRef.stopAsync();
-      await soundRef.unloadAsync();
-    } catch {}
-    soundRef = null;
-    currentTrackId = null;
-  }
+  try { await TrackPlayer.reset(); } catch (e) { console.warn('[TP] stopPlayback error:', e); }
 }
 
-/**
- * Immediately silence the current playback (stop audio output) but keep
- * the soundRef alive so we can still check player state. Used when
- * switching songs so the user doesn't hear the old song during URL resolution.
- */
-export async function fadeOutAndPause(): Promise<void> {
-  stopEndCheck();
-  if (soundRef) {
-    try {
-      await soundRef.stopAsync();
-    } catch {}
-  }
+export async function getPlayerState(): Promise<string | undefined> {
+  try {
+    const state = await TrackPlayer.getPlaybackState();
+    if (state.state === State.Playing) return 'playing';
+    if (state.state === State.Paused) return 'paused';
+    if (state.state === State.Stopped) return 'stopped';
+    if (state.state === State.Buffering) return 'buffering';
+    if (state.state === State.Ended) return 'ended';
+    return undefined;
+  } catch { return undefined; }
 }
+
+export async function getCurrentPosition(): Promise<number> {
+  try { return await TrackPlayer.getProgress().then(p => p.position); } catch { return 0; }
+}
+
+export async function getDuration(): Promise<number> {
+  try { return await TrackPlayer.getProgress().then(p => p.duration); } catch { return 0; }
+}
+
+export function hasSoundRef(): boolean { return _g.__TP_IS_SETUP; }
