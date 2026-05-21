@@ -135,29 +135,16 @@ function patchMusicModule() {
     return;
   }
 
-  // Patch 1: getTrack — originalItem can be null on RN 0.81+
-  const oldGetTrack = `callback.resolve(Arguments.fromBundle(musicService.tracks[index].originalItem))`;
-  const newGetTrack = `callback.resolve(Arguments.fromBundle(musicService.tracks[index].originalItem ?: Bundle())) /* ★ PATCHED_NULL_SAFETY */`;
-
-  if (content.includes(oldGetTrack)) {
-    content = content.replace(oldGetTrack, newGetTrack);
-    console.log('[patch-rntp] ✓ Patched MusicModule getTrack null safety');
-  } else {
-    console.log('[patch-rntp] ⚠ Could not find MusicModule getTrack to patch');
-  }
-
-  // Patch 2: getActiveTrack — same issue
-  const oldGetActiveTrack = `musicService.tracks[musicService.getCurrentTrackIndex()].originalItem`;
-  // Only replace the one inside Arguments.fromBundle()
-  const oldGetActiveTrackInBundle = `Arguments.fromBundle(\n                musicService.tracks[musicService.getCurrentTrackIndex()].originalItem\n            )`;
-  const newGetActiveTrackInBundle = `Arguments.fromBundle(\n                musicService.tracks[musicService.getCurrentTrackIndex()].originalItem ?: Bundle() /* ★ PATCHED_NULL_SAFETY */\n            )`;
-
-  if (content.includes(oldGetActiveTrackInBundle)) {
-    content = content.replace(oldGetActiveTrackInBundle, newGetActiveTrackInBundle);
-    console.log('[patch-rntp] ✓ Patched MusicModule getActiveTrack null safety');
-  } else {
-    console.log('[patch-rntp] ⚠ Could not find MusicModule getActiveTrack to patch');
-  }
+  // Patch: Every Arguments.fromBundle(originalItem) needs null safety
+  // On RN 0.81+, originalItem can return null: Bundle?
+  // https://github.com/doublesymmetry/react-native-track-player/issues/2560
+  let patchCount = 0;
+  content = content.replace(
+    /Arguments\.fromBundle\((.*?)originalItem\)/g,
+    'Arguments.fromBundle($1originalItem ?: Bundle()) /* ★ PATCHED_NULL_SAFETY */'
+  );
+  patchCount = (content.match(/★ PATCHED_NULL_SAFETY/g) || []).length;
+  console.log(`[patch-rntp] ✓ Patched ${patchCount} MusicModule originalItem null safety occurrences`);
 
   fs.writeFileSync(MODULE_FILE, content, 'utf8');
   console.log('[patch-rntp] ✓ MusicModule.kt patch applied');
