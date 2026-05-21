@@ -140,8 +140,11 @@ function patchMusicModule() {
   // https://github.com/doublesymmetry/react-native-track-player/issues/2560
   let patchCount = 0;
   content = content.replace(
-    /Arguments\.fromBundle\((.*?)originalItem\)/g,
-    'Arguments.fromBundle($1originalItem ?: Bundle()) /* ★ PATCHED_NULL_SAFETY */'
+    /Arguments\.fromBundle\([\s\S]*?originalItem\s*\)/g,
+    (match) => {
+      // Keep the content between fromBundle( and originalItem), add null safety before )
+      return match.replace(/originalItem\s*\)/, 'originalItem ?: Bundle()) /* ★ PATCHED_NULL_SAFETY */');
+    }
   );
   patchCount = (content.match(/★ PATCHED_NULL_SAFETY/g) || []).length;
   console.log(`[patch-rntp] ✓ Patched ${patchCount} MusicModule originalItem null safety occurrences`);
