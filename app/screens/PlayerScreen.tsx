@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   Dimensions,
   Easing,
@@ -21,11 +22,16 @@ import { usePlaylist } from '../hooks/usePlaylist';
 import { useFavorite } from '../hooks/useFavorite';
 import { useLyric } from '../hooks/useLyric';
 import { useDownload } from '../hooks/useDownload';
+import { useSongActionSheet } from '../hooks/useSongActionSheet';
 import { useAppTheme } from '../theme/ThemeContext';
 import { useAlbumColors } from '../hooks/useAlbumColors';
+import { useDownloadStore } from '../store/downloadStore';
 import LyricView from '../components/lyric/LyricView';
 import PlaylistDrawer from '../components/player/PlaylistDrawer';
 import CommentList from '../components/comment/CommentList';
+import SongActionSheet from '../components/music/SongActionSheet';
+import { showToast } from '../components/ui/Toast';
+import request from '../api/request';
 import { PLAY_MODE_SEQUENTIAL, PLAY_MODE_LOOP, PLAY_MODE_SHUFFLE } from '../constants/config';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -57,54 +63,85 @@ function ProgressBar({
   accentColor: string;
   onSeek: (v: number) => void;
 }) {
-  const [localWidth, setLocalWidth] = useState(SCREEN_WIDTH - 64);
-  const pan = useRef(new Animated.Value(0)).current;
+  const barRef = useRef<View>(null);
+  const barWidth = useRef(0);
   const isDragging = useRef(false);
+  // ★ 松手后短暂屏蔽 prop 同步，等 seek 完成再恢复
+  const cooldownUntil = useRef(0);
 
+  // Animated fill width (0–1) — drives both fill bar and thumb position
+  const fillAnim = useRef(new Animated.Value(0)).current;
+
+  // Sync to actual progress — no animation, instant setValue
   const percentage = max > 0 ? Math.min(value / max, 1) : 0;
+
+  useEffect(() => {
+    if (isDragging.current) return;
+    if (Date.now() < cooldownUntil.current) return;
+    fillAnim.setValue(percentage);
+  }, [percentage]);
+
+  // Pre-calc layout width once
+  const onLayout = useCallback((e: any) => {
+    barWidth.current = e.nativeEvent.layout.width;
+  }, []);
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 2,
       onPanResponderGrant: () => {
         isDragging.current = true;
       },
       onPanResponderMove: (_, gs) => {
-        const pct = Math.max(0, Math.min(gs.moveX / localWidth, 1));
-        pan.setValue(pct);
+        if (barWidth.current <= 0) return;
+        const pct = Math.max(0, Math.min(gs.moveX / (barWidth.current || 1), 1));
+        fillAnim.setValue(pct);
       },
       onPanResponderRelease: (_, gs) => {
-        const pct = Math.max(0, Math.min(gs.moveX / localWidth, 1));
+        if (barWidth.current <= 0) return;
+        const pct = Math.max(0, Math.min(gs.moveX / (barWidth.current || 1), 1));
+        fillAnim.setValue(pct);
+        cooldownUntil.current = Date.now() + 400; // block prop sync while seeking
         onSeek(pct * max);
         isDragging.current = false;
-        pan.setValue(0);
+      },
+      onPanResponderTerminate: () => {
+        isDragging.current = false;
       },
     })
   ).current;
 
-  const fillWidth = isDragging.current
-    ? (pan as any).__getValue
-      ? Math.max(0, Math.min((pan as any).__getValue(), 1)) * 100
-      : percentage * 100
-    : percentage * 100;
+  // Interpolate fill width (0%–100%) and thumb left
+  const fillPct = fillAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', '100%'],
+    extrapolate: 'clamp',
+  });
+
+  const thumbLeft = fillAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', '100%'],
+    extrapolate: 'clamp',
+  });
 
   return (
     <View
+      ref={barRef}
       style={styles.progressContainer}
-      onLayout={(e) => setLocalWidth(e.nativeEvent.layout.width)}
+      onLayout={onLayout}
       {...panResponder.panHandlers}
     >
       {/* Track */}
       <View style={styles.progressTrack}>
-        {/* Fill */}
-        <View style={[styles.progressFill, { width: `${fillWidth}%`, backgroundColor: accentColor }]} />
-        {/* Thumb */}
-        <View
+        {/* Fill — driven by Animated.Value */}
+        <Animated.View style={[styles.progressFill, { width: fillPct, backgroundColor: accentColor }]} />
+        {/* Thumb — driven by Animated.Value */}
+        <Animated.View
           style={[
             styles.progressThumb,
             {
-              left: `${fillWidth}%`,
+              left: thumbLeft,
               backgroundColor: accentColor,
               shadowColor: accentColor,
             },
@@ -121,14 +158,23 @@ export default function PlayerScreen() {
   const insets = useSafeAreaInsets();
   const { colors, isDog: _isDog } = useAppTheme();
   const { togglePlayback, next, prev, seekTo, playSong: _playSong, isPlay, playMusic, currentProgress, duration } = usePlayer();
-  const { playMode, togglePlayMode, showPlaylistDrawer, setShowPlaylistDrawer } = usePlaylist();
+  const { playMode, togglePlayMode, playList, showPlaylistDrawer, setShowPlaylistDrawer } = usePlaylist();
+  const playListCount = playList.length;
   const { isFavorite, toggleFavorite } = useFavorite();
   const { lyric, currentLineIndex, isLoading, fontSize, showTranslation } = useLyric();
   const { download, checkDownloaded } = useDownload();
+  const { actionSong, showSheet, actionItems, handlePress: handleSongMore, handleClose: handleSheetClose } = useSongActionSheet();
 
   const [showLyric, setShowLyric] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [prevSongId, setPrevSongId] = useState<string | number | null>(null);
+  const [downloadState, setDownloadState] = useState<'idle' | 'downloading' | 'done'>('idle');
+  const [commentCount, setCommentCount] = useState(0);
+
+  // ★ Track download progress for current song
+  const downloadTask = useDownloadStore((s) =>
+    playMusic ? s.tasks.find((t) => String(t.song.id) === String(playMusic.id)) : null
+  );
 
   // ── Dynamic album colors ──
   const albumArtUrl = playMusic?.picUrl || playMusic?.al?.picUrl || '';
@@ -268,9 +314,35 @@ export default function PlayerScreen() {
 
   const toggleShowLyric = useCallback(() => setShowLyric((p) => !p), []);
 
+  // ★ Sync download state with store
+  useEffect(() => {
+    if (!playMusic) { setDownloadState('idle'); return; }
+    if (isDownloaded) { setDownloadState('done'); return; }
+    if (downloadTask?.status === 'downloading' || downloadTask?.status === 'pending') {
+      setDownloadState('downloading');
+    } else if (downloadTask?.status === 'completed') {
+      setDownloadState('done');
+      showToast({ title: '下载完成', message: `「${playMusic.name}」已下载到本地`, type: 'success' });
+    } else {
+      setDownloadState('idle');
+    }
+  }, [playMusic, isDownloaded, downloadTask?.status]);
+
+  // ★ Fetch comment count when song changes
+  useEffect(() => {
+    if (!playMusic?.id) { setCommentCount(0); return; }
+    request.get('/comment/music', { params: { id: playMusic.id, limit: 0 } })
+      .then((res: any) => setCommentCount(res?.data?.total || 0))
+      .catch(() => {});
+  }, [playMusic?.id]);
+
   const handleDownload = useCallback(() => {
-    if (playMusic && !isDownloaded) download(playMusic);
-  }, [playMusic, isDownloaded, download]);
+    if (playMusic && !isDownloaded && downloadState !== 'downloading') {
+      download(playMusic);
+      setDownloadState('downloading');
+      showToast({ title: '已加入下载队列', message: `正在下载「${playMusic.name}」`, type: 'info' });
+    }
+  }, [playMusic, isDownloaded, downloadState, download]);
 
   const handleGoBack = useCallback(() => {
     if (isClosingRef.current) return;
@@ -462,27 +534,71 @@ export default function PlayerScreen() {
 
         {/* ── Bottom Actions ── */}
         <View style={[styles.actionBar, { borderTopColor: accentColor + '20' }]}>
-          <TouchableOpacity style={styles.actionItem} onPress={handleDownload} disabled={isDownloaded}>
-            <MaterialCommunityIcons name={isDownloaded ? 'check-circle' : 'download-outline'} size={18} color={isDownloaded ? colors.success : 'rgba(255,255,255,0.45)'} />
-            <Text style={[styles.actionLabel, isDownloaded && { color: colors.success }]}>{isDownloaded ? '已下载' : '下载'}</Text>
+          {/* Download — with loading feedback */}
+          <TouchableOpacity
+            style={styles.actionItem}
+            onPress={handleDownload}
+            disabled={downloadState === 'downloading' || downloadState === 'done'}
+          >
+            {downloadState === 'downloading' ? (
+              <ActivityIndicator size={16} color={accentColor} />
+            ) : (
+              <MaterialCommunityIcons
+                name={downloadState === 'done' ? 'check-circle' : 'download-outline'}
+                size={18}
+                color={downloadState === 'done' ? colors.success : 'rgba(255,255,255,0.45)'}
+              />
+            )}
+            <Text style={[styles.actionLabel, downloadState === 'done' && { color: colors.success }]}>
+              {downloadState === 'downloading' ? '下载中' : downloadState === 'done' ? '已下载' : '下载'}
+            </Text>
           </TouchableOpacity>
+
+          {/* Lyrics / Cover toggle */}
           <TouchableOpacity style={styles.actionItem} onPress={toggleShowLyric}>
             <MaterialCommunityIcons name={showLyric ? 'image-outline' : 'text-box-outline'} size={18} color={showLyric ? accentColor : 'rgba(255,255,255,0.45)'} />
             <Text style={[styles.actionLabel, showLyric && { color: accentColor }]}>{showLyric ? '封面' : '歌词'}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionItem} onPress={() => setShowPlaylistDrawer(!showPlaylistDrawer)}>
-            <MaterialCommunityIcons name="playlist-music" size={18} color="rgba(255,255,255,0.45)" />
+
+          {/* Playlist — with count badge */}
+          <TouchableOpacity style={styles.actionItem} onPress={() => setShowPlaylistDrawer(true)}>
+            <View>
+              <MaterialCommunityIcons name="playlist-music" size={18} color="rgba(255,255,255,0.45)" />
+              {playListCount > 0 && (
+                <View style={[styles.badge, { backgroundColor: accentColor }]}>
+                  <Text style={styles.badgeText}>{playListCount > 99 ? '99+' : playListCount}</Text>
+                </View>
+              )}
+            </View>
             <Text style={styles.actionLabel}>列表</Text>
           </TouchableOpacity>
+
+          {/* Comment — with count badge */}
           <TouchableOpacity style={styles.actionItem} onPress={() => setShowComments(true)}>
-            <MaterialCommunityIcons name="comment-text-outline" size={18} color="rgba(255,255,255,0.45)" />
+            <View>
+              <MaterialCommunityIcons name="comment-text-outline" size={18} color="rgba(255,255,255,0.45)" />
+              {commentCount > 0 && (
+                <View style={[styles.badge, { backgroundColor: accentColor }]}>
+                  <Text style={styles.badgeText}>{commentCount > 99 ? '99+' : commentCount}</Text>
+                </View>
+              )}
+            </View>
             <Text style={styles.actionLabel}>评论</Text>
+          </TouchableOpacity>
+
+          {/* ★ Three-dot menu */}
+          <TouchableOpacity style={styles.actionItem} onPress={() => playMusic && handleSongMore(playMusic, 0)}>
+            <MaterialCommunityIcons name="dots-horizontal" size={18} color="rgba(255,255,255,0.45)" />
+            <Text style={styles.actionLabel}>更多</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       {/* Playlist Drawer */}
       <PlaylistDrawer />
+
+      {/* ★ Three-dot menu action sheet */}
+      <SongActionSheet visible={showSheet} song={actionSong} actions={actionItems} onClose={handleSheetClose} />
 
       {/* ── 歌曲评论弹窗 ── */}
       <Modal visible={showComments} animationType="slide" onRequestClose={() => setShowComments(false)}>
@@ -615,6 +731,8 @@ const styles = StyleSheet.create({
   actionBar: { flexDirection: 'row', justifyContent: 'space-around', paddingHorizontal: 24, marginTop: 14, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth },
   actionItem: { alignItems: 'center', gap: 4, paddingHorizontal: 16 },
   actionLabel: { fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: 0.3 },
+  badge: { position: 'absolute', top: -6, right: -12, minWidth: 18, height: 16, borderRadius: 8, paddingHorizontal: 3, justifyContent: 'center', alignItems: 'center' },
+  badgeText: { fontSize: 8, fontWeight: '800', color: '#ffffff' },
 
   // ── Comment Modal ──
   commentModal: { flex: 1 },

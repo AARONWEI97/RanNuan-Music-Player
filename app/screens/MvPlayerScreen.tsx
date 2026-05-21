@@ -2,8 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
-  Dimensions,
-  Image,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -11,16 +9,14 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Video, type AVPlaybackStatus } from 'expo-av';
+import { Video, ResizeMode, type AVPlaybackStatus } from 'expo-av';
+import TrackPlayer from 'react-native-track-player';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { getMvUrl, getMvDetail } from '../api/mv';
 import { useAppTheme } from '../theme/ThemeContext';
-import { Spacing } from '../theme/spacing';
 import type { RootStackScreenProps } from '../types';
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 function formatCount(n: number): string {
   if (n >= 100000000) return (n / 100000000).toFixed(1) + '亿';
@@ -40,9 +36,9 @@ export default function MvPlayerScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [mvDetail, setMvDetail] = useState<any>(null);
-  const [isPlaying, setIsPlaying] = useState(true);
+  const [, setIsPlaying] = useState(true);
   const [showControls, setShowControls] = useState(true);
-  const hideTimer = useRef<ReturnType<typeof setTimeout>>();
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
@@ -54,6 +50,15 @@ export default function MvPlayerScreen() {
     }
     setShowControls(!showControls);
   }, [showControls, fadeAnim]);
+
+  // Pause TrackPlayer when entering MV page to avoid audio overlap
+  useEffect(() => {
+    TrackPlayer.pause().catch(() => {});
+    return () => {
+      // Resume TrackPlayer on leave so user can continue listening
+      TrackPlayer.pause().catch(() => {});
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,7 +109,7 @@ export default function MvPlayerScreen() {
           ref={videoRef}
           source={{ uri: url }}
           style={styles.video}
-          resizeMode="contain"
+          resizeMode={ResizeMode.CONTAIN}
           shouldPlay
           isLooping
           onPlaybackStatusUpdate={(status: AVPlaybackStatus) => {

@@ -110,9 +110,10 @@ export default function PlaylistDrawer() {
       transparent
       animationType="slide"
       onRequestClose={handleClose}
+      statusBarTranslucent
     >
     <Pressable style={styles.overlay} onPress={handleClose}>
-      <Pressable>
+      <View onStartShouldSetResponder={() => true} onTouchEnd={(e) => e.stopPropagation()}>
         <View style={[styles.drawer, { paddingBottom: insets.bottom + Spacing.md }]}>
           <TouchableOpacity style={styles.handleWrap} onPress={handleClose} activeOpacity={0.6}>
             <View style={styles.handle} />
@@ -157,7 +158,7 @@ export default function PlaylistDrawer() {
                 })}
               />
         </View>
-      </Pressable>
+      </View>
     </Pressable>
     </Modal>
   );

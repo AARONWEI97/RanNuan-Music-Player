@@ -8,6 +8,7 @@ export type RootStackParamList = {
   Playlist: { id: number; name?: string };
   PlaylistDetail: { id: number };
   ArtistDetail: { id: number };
+  ArtistList: undefined;
   AlbumDetail: { id: number };
   Toplist: undefined;
   MvList: undefined;

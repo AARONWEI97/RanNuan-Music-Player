@@ -26,6 +26,7 @@ import LikedSongsScreen from '../screens/LikedSongsScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import LocalMusicScreen from '../screens/LocalMusicScreen';
 import HeatmapScreen from '../screens/HeatmapScreen';
+import ArtistListScreen from '../screens/ArtistListScreen';
 import MiniPlayer from '../components/player/MiniPlayer';
 import { usePlayerStore } from '../store/playerStore';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -416,6 +417,7 @@ export default function AppNavigator() {
           <Stack.Screen name="History" component={HistoryScreen} options={{ headerShown: false }} />
           <Stack.Screen name="LocalMusic" component={LocalMusicScreen} options={{ headerShown: false }} />
           <Stack.Screen name="Heatmap" component={HeatmapScreen} options={{ headerShown: false }} />
+          <Stack.Screen name="ArtistList" component={ArtistListScreen as any} options={{ headerShown: false }} />
         </Stack.Navigator>
         <GlobalMiniPlayer currentRouteName={currentRouteName} />
       </View>

@@ -1,6 +1,6 @@
 export const APP_NAME = 'Alger Music';
 export const APP_VERSION = '1.0.0';
-export const DEFAULT_API_URL = 'http://192.168.1.9:3000';
+export const DEFAULT_API_URL = 'http://139.9.223.233:3000';
 export const DEFAULT_MUSIC_QUALITY = 'exhigh';
 export const MAX_PLAY_HISTORY = 200;
 export const MAX_PLAYLIST_HISTORY = 50;

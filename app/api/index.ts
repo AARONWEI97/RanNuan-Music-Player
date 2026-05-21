@@ -47,7 +47,13 @@ export {
   getUserDetail as getLoginUserDetail,
   logout,
   loginByCellphone,
+  loginByCaptcha,
+  loginByEmail,
   loginByUid,
+  registerAnonymous,
+  refreshLogin,
+  sendCaptcha,
+  verifyCaptcha,
 } from './login';
 
 export {
@@ -64,11 +70,30 @@ export {
   getRecentAlbums,
   getUserFollows,
   getUserFollowers,
+  followUser,
+  checkMutualFollow,
+  getFollowMixed,
   getUserAccount,
   getUserDetailInfo,
+  getUserSubcount,
+  getUserLevel,
+  getUserBinding,
+  getUserMedal,
+  getUserEvent,
+  getUserDj,
+  updateUserInfo,
+  getUserSocialStatus,
+  getSocialStatusSupport,
+  getSocialStatusRcmd,
+  editSocialStatus,
   getUserFollowsInfo,
   getUserPlaylists,
+  getUserCreatePlaylist,
+  getUserCollectPlaylist,
   getUserAlbumSublist,
+  getPurchasedAlbumList,
+  getPurchasedSongs,
+  getArtistNewMv,
 } from './user';
 
 export {
@@ -81,6 +106,17 @@ export {
   getArtistTopSongs,
   getArtistAlbums,
   getArtistNewSongs,
+  getArtistDetailDynamic,
+  getArtistDesc,
+  getArtistTopSong,
+  getArtistSongs,
+  getArtistMv,
+  getArtistVideo,
+  subscribeArtist,
+  getArtistSublist,
+  getArtistFans,
+  getArtistFollowCount,
+  getArtistList,
 } from './artist';
 
 export {

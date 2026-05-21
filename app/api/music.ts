@@ -45,6 +45,8 @@ export const getMusicUrl = async (id: number, isDownloaded: boolean = false) => 
       id,
       level: musicQuality,
       encodeType,
+      unblock: true,
+      randomCNIP: true,
       ...(cookieWithOs ? { cookie: cookieWithOs } : {}),
     }
   });
@@ -71,6 +73,8 @@ export const getParsingMusicUrl = async (
       id,
       level: musicQuality,
       encodeType: musicQuality === 'lossless' ? 'aac' : 'flac',
+      unblock: true,
+      randomCNIP: true,
       ...(cookieWithOs ? { cookie: cookieWithOs } : {}),
     }
   });

@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import type { SongResult } from '../types';
 import { usePlayerStore } from './playerStore';
-import { stopPlayback } from '../services/trackPlayerService';
+import { stopPlayback, clearNextInQueue } from '../services/trackPlayerService';
 
 type MinifiedSong = Pick<SongResult, 'id' | 'name' | 'picUrl' | 'dt' | 'duration' | 'source'> & {
   ar: { id: number; name: string }[] | undefined;
@@ -110,9 +110,19 @@ export const usePlaylistStore = create<PlaylistState & PlaylistActions>()(
       togglePlayMode: () => {
         const { playMode } = get();
         set({ playMode: (playMode + 1) % 3 });
+        // ★ 清除原生队列中的 next track，让新模式重新预加载
+        clearNextInQueue().catch(() => {});
+        // ★ 重置随机索引和预加载缓存
+        const _g = global as any;
+        _g.__nextShuffleIndex = null;
+        _g.__preloadedNextSong = null;
       },
       setPlayMode: (mode: number) => {
         set({ playMode: mode });
+        clearNextInQueue().catch(() => {});
+        const _g = global as any;
+        _g.__nextShuffleIndex = null;
+        _g.__preloadedNextSong = null;
       },
 
       nextPlay: () => {
@@ -126,8 +136,24 @@ export const usePlaylistStore = create<PlaylistState & PlaylistActions>()(
 
         let nextIndex: number;
         if (playMode === 2) {
-          // 随机模式
-          nextIndex = Math.floor(Math.random() * playList.length);
+          // ★ 随机模式：使用"确定性下一首"策略
+          // 如果 usePlayer 已经预选了 __nextShuffleIndex，直接消费它
+          // 否则 fallback 到纯随机
+          const _g = global as any;
+          if (_g.__nextShuffleIndex !== null && _g.__nextShuffleIndex !== undefined
+              && _g.__nextShuffleIndex < playList.length) {
+            nextIndex = _g.__nextShuffleIndex;
+            // 消费后立即生成下一个随机索引，供预加载使用
+            do {
+              _g.__nextShuffleIndex = Math.floor(Math.random() * playList.length);
+            } while (_g.__nextShuffleIndex === nextIndex && playList.length > 1);
+          } else {
+            nextIndex = Math.floor(Math.random() * playList.length);
+            // 生成下一个
+            do {
+              _g.__nextShuffleIndex = Math.floor(Math.random() * playList.length);
+            } while (_g.__nextShuffleIndex === nextIndex && playList.length > 1);
+          }
         } else {
           // 顺序 / 心动 / 单曲循环（单曲循环在上层处理，这里不会走到）
           nextIndex = (playListIndex + 1) % playList.length;

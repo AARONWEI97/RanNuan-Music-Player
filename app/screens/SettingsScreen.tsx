@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Image,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -151,6 +152,18 @@ export default function SettingsScreen() {
 
   const handleOpenGithub = useCallback(() => {
     Linking.openURL('https://github.com/AARONWEI97/RanNuan-Music-Player').catch(() => {});
+  }, []);
+
+  const handleOpenBatterySettings = useCallback(() => {
+    // ★ 引导用户关闭电池优化，防止 Android 系统冻结后台 JS 线程
+    // 导致锁屏时无法自动切歌
+    if (Platform.OS === 'android') {
+      // 打开应用设置页（电池优化）
+      Linking.openSettings().catch(() => {
+        // fallback: 尝试打开应用详情页
+        Linking.openURL('android.settings.APPLICATION_DETAILS_SETTINGS').catch(() => {});
+      });
+    }
   }, []);
 
   // ==================== 渲染辅助 ====================
@@ -361,6 +374,21 @@ export default function SettingsScreen() {
             </View>
             <Text style={[styles.optionValue, { color: colors.textSecondary }]}>MIT</Text>
           </View>
+          {Platform.OS === 'android' && (
+            <>
+              {renderDivider()}
+              <TouchableOpacity style={styles.optionRow} onPress={handleOpenBatterySettings}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <MaterialCommunityIcons name="battery-outline" size={20} color={colors.textSecondary} style={{ marginRight: 10 }} />
+                  <View>
+                    <Text style={[styles.optionLabel, { color: colors.text }]}>电池优化</Text>
+                    <Text style={[styles.optionHint, { color: colors.textTertiary }]}>关闭电池优化以改善锁屏切歌</Text>
+                  </View>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textTertiary} />
+              </TouchableOpacity>
+            </>
+          )}
         </>
       )}
     </>

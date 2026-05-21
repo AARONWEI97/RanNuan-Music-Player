@@ -45,6 +45,10 @@ export default function UserScreen() {
   const playlists = useUserStore((s) => s.playlists);
   const playlistsLoading = useUserStore((s) => s.playlistsLoading);
   const fetchUserPlaylists = useUserStore((s) => s.fetchUserPlaylists);
+  const fetchSubcount = useUserStore((s) => s.fetchSubcount);
+  const fetchLevel = useUserStore((s) => s.fetchLevel);
+  const subcount = useUserStore((s) => s.subcount);
+  const levelData = useUserStore((s) => s.levelData);
   const checkLoginStatus = useUserStore((s) => s.checkLoginStatus);
   const musicHistory = usePlayHistoryStore((s) => s.musicHistory);
   const { playSong } = usePlayer();
@@ -110,11 +114,14 @@ export default function UserScreen() {
                 if (profile.follows !== undefined) setFollowCount(profile.follows);
               }
             }).catch(() => {});
+            // 拉取统计数量和等级详情
+            fetchSubcount();
+            fetchLevel();
           }
         });
         return () => handle.cancel();
       }
-    }, [user?.userId, isUidLogin, fetchUserPlaylists])
+    }, [user?.userId, isUidLogin, fetchUserPlaylists, fetchSubcount, fetchLevel])
   );
 
   // Fetch listening records — ★ 延迟到交互空闲时加载，避免阻塞 UI
@@ -246,7 +253,7 @@ export default function UserScreen() {
               {loginType && (
                 <View style={styles.loginTypeTag}>
                   <Text style={styles.loginTypeTagText}>
-                    {loginType === 'qr' ? '扫码' : loginType === 'phone' ? '手机' : loginType === 'cookie' ? 'Cookie' : 'UID'}
+                    {loginType === 'qr' ? '扫码' : loginType === 'phone' ? '手机' : loginType === 'cookie' ? 'Cookie' : loginType === 'guest' ? '游客' : 'UID'}
                   </Text>
                 </View>
               )}
@@ -276,7 +283,14 @@ export default function UserScreen() {
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>Lv.{userLevel || (profile?.vipType ?? 0)}</Text>
+            <Text style={styles.statValue}>
+              Lv.{levelData?.level || userLevel || (profile?.level ?? 0)}
+            </Text>
+            {levelData && (
+              <View style={styles.levelProgressBar}>
+                <View style={[styles.levelProgressFill, { width: `${Math.min(levelData.progress, 100)}%` }]} />
+              </View>
+            )}
             <Text style={styles.statLabel}>等级</Text>
           </View>
           <View style={styles.statDivider} />
@@ -288,6 +302,32 @@ export default function UserScreen() {
             <Text style={styles.logoutText}>退出</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Subcount Row — 仅在非UID登录且有数据时显示 */}
+        {subcount && loginType !== 'uid' && (
+          <View style={styles.subcountRow}>
+            <View style={styles.subcountItem}>
+              <Text style={styles.subcountValue}>{subcount.createdPlaylistCount || 0}</Text>
+              <Text style={styles.subcountLabel}>歌单</Text>
+            </View>
+            <View style={styles.subcountItem}>
+              <Text style={styles.subcountValue}>{subcount.artistCount || 0}</Text>
+              <Text style={styles.subcountLabel}>歌手</Text>
+            </View>
+            <View style={styles.subcountItem}>
+              <Text style={styles.subcountValue}>{subcount.mvCount || 0}</Text>
+              <Text style={styles.subcountLabel}>MV</Text>
+            </View>
+            <View style={styles.subcountItem}>
+              <Text style={styles.subcountValue}>{subcount.djRadioCount || 0}</Text>
+              <Text style={styles.subcountLabel}>电台</Text>
+            </View>
+            <View style={styles.subcountItem}>
+              <Text style={styles.subcountValue}>{subcount.programCount || 0}</Text>
+              <Text style={styles.subcountLabel}>节目</Text>
+            </View>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -715,6 +755,44 @@ function createStyles(colors: any) {
       ...Typography.overline,
       color: 'rgba(255,255,255,0.7)',
       marginLeft: 3,
+    },
+    // ─── Level Progress ───
+    levelProgressBar: {
+      width: 40,
+      height: 3,
+      backgroundColor: 'rgba(255,255,255,0.2)',
+      borderRadius: 2,
+      marginTop: 3,
+      overflow: 'hidden',
+    },
+    levelProgressFill: {
+      height: '100%',
+      backgroundColor: '#fbbf24',
+      borderRadius: 2,
+    },
+    // ─── Subcount Row ───
+    subcountRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-around',
+      paddingTop: Spacing.sm,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: 'rgba(255,255,255,0.1)',
+      marginTop: Spacing.sm,
+    },
+    subcountItem: {
+      alignItems: 'center',
+      minWidth: 40,
+    },
+    subcountValue: {
+      ...Typography.caption,
+      color: '#ffffff',
+      fontWeight: '600',
+    },
+    subcountLabel: {
+      ...Typography.overline,
+      color: 'rgba(255,255,255,0.5)',
+      marginTop: 1,
+      fontSize: 10,
     },
 
     // ─── Not Logged In ───

@@ -18,7 +18,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { getQrKey, createQr, checkQr, loginByCellphone, loginByUid } from '../api/login';
+import { getQrKey, createQr, checkQr, loginByCellphone, loginByCaptcha, loginByEmail, loginByUid, registerAnonymous, sendCaptcha } from '../api/login';
 import { getUserAccount } from '../api/user';
 import { useUserStore } from '../store/userStore';
 import { TOKEN_KEY } from '../api/request';
@@ -27,7 +27,7 @@ import { Spacing, BorderRadius } from '../theme/spacing';
 import { Typography } from '../theme/typography';
 import type { RootStackScreenProps } from '../types';
 
-type LoginMethod = 'qr' | 'phone' | 'uid' | 'cookie';
+type LoginMethod = 'qr' | 'phone' | 'email' | 'uid' | 'cookie';
 
 const QR_POLL_INTERVAL = 3000;
 const QR_EXPIRE_TIME = 300000;
@@ -50,10 +50,18 @@ export default function LoginScreen() {
 
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [loginMode, setLoginMode] = useState<'password' | 'captcha'>('password');
+  const [captcha, setCaptcha] = useState('');
+  const [captchaSending, setCaptchaSending] = useState(false);
+  const [captchaCountdown, setCaptchaCountdown] = useState(0);
+
+  const [email, setEmail] = useState('');
+  const [emailPassword, setEmailPassword] = useState('');
 
   const [uid, setUid] = useState('');
 
   const [cookie, setCookie] = useState('');
+  const [guestLoading, setGuestLoading] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -61,6 +69,34 @@ export default function LoginScreen() {
       if (expireTimerRef.current) clearTimeout(expireTimerRef.current);
     };
   }, []);
+
+  // 验证码倒计时
+  useEffect(() => {
+    if (captchaCountdown <= 0) return;
+    const timer = setInterval(() => {
+      setCaptchaCountdown((prev) => {
+        if (prev <= 1) { clearInterval(timer); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [captchaCountdown]);
+
+  const handleSendCaptcha = useCallback(async () => {
+    if (!phone.trim() || phone.trim().length < 11) {
+      Alert.alert('提示', '请输入正确的手机号');
+      return;
+    }
+    setCaptchaSending(true);
+    try {
+      await sendCaptcha(phone.trim());
+      setCaptchaCountdown(60);
+    } catch {
+      Alert.alert('提示', '发送验证码失败，请稍后重试');
+    } finally {
+      setCaptchaSending(false);
+    }
+  }, [phone]);
 
   const handleLoginSuccess = useCallback(async (cookieStr: string, type: 'qr' | 'phone' | 'uid' | 'cookie') => {
     try {
@@ -157,35 +193,123 @@ export default function LoginScreen() {
       Alert.alert('提示', '请输入手机号');
       return;
     }
-    if (!password.trim()) {
+    if (loginMode === 'captcha' && !captcha.trim()) {
+      Alert.alert('提示', '请输入验证码');
+      return;
+    }
+    if (loginMode === 'password' && !password.trim()) {
       Alert.alert('提示', '请输入密码');
       return;
     }
 
     setLoading(true);
     try {
-      const res = await loginByCellphone(phone.trim(), password.trim());
+      let res;
+      if (loginMode === 'captcha') {
+        res = await loginByCaptcha(phone.trim(), captcha.trim());
+      } else {
+        res = await loginByCellphone(phone.trim(), password.trim());
+      }
       const code = res?.data?.code;
 
       if (code === 200) {
         const ck = res?.data?.cookie || res?.headers?.['set-cookie']?.[0] || '';
         await handleLoginSuccess(ck, 'phone');
       } else if (code === 502) {
-        Alert.alert('登录失败', '手机号或密码错误');
+        Alert.alert('登录失败', loginMode === 'captcha' ? '验证码错误' : '手机号或密码错误');
       } else {
         Alert.alert('登录失败', res?.data?.message || '未知错误');
       }
     } catch (e: any) {
       const status = e?.response?.status;
       if (status === 502) {
-        Alert.alert('登录失败', '手机号或密码错误');
+        Alert.alert('登录失败', loginMode === 'captcha' ? '验证码错误' : '手机号或密码错误');
       } else {
         Alert.alert('登录失败', '网络错误，请重试');
       }
     } finally {
       setLoading(false);
     }
-  }, [phone, password, handleLoginSuccess]);
+  }, [phone, password, captcha, loginMode, handleLoginSuccess]);
+
+  // 邮箱登录
+  const handleEmailLogin = useCallback(async () => {
+    if (!email.trim()) {
+      Alert.alert('提示', '请输入邮箱');
+      return;
+    }
+    if (!emailPassword.trim()) {
+      Alert.alert('提示', '请输入密码');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await loginByEmail(email.trim(), emailPassword.trim());
+      const code = res?.data?.code;
+
+      if (code === 200) {
+        const ck = res?.data?.cookie || res?.headers?.['set-cookie']?.[0] || '';
+        await handleLoginSuccess(ck, 'phone');
+      } else {
+        Alert.alert('登录失败', res?.data?.message || '邮箱或密码错误');
+      }
+    } catch {
+      Alert.alert('登录失败', '网络错误，请重试');
+    } finally {
+      setLoading(false);
+    }
+  }, [email, emailPassword, handleLoginSuccess]);
+
+  // 游客登录
+  const handleGuestLogin = useCallback(async () => {
+    setGuestLoading(true);
+    try {
+      const res = await registerAnonymous();
+      const cookie = res?.data?.cookie || res?.headers?.['set-cookie']?.[0] || '';
+
+      if (cookie) {
+        await AsyncStorage.setItem(TOKEN_KEY, cookie);
+
+        const accountRes = await getUserAccount();
+        const profile = accountRes?.data?.profile;
+        const account = accountRes?.data?.account;
+
+        if (profile) {
+          setUser({
+            userId: profile.userId || account?.id,
+            nickname: profile.nickname || '游客',
+            avatarUrl: profile.avatarUrl,
+            backgroundUrl: profile.backgroundUrl,
+            vipType: profile.vipType,
+            profile,
+            account,
+          });
+          setLoginType('guest');
+          Alert.alert('提示', '游客登录成功，部分功能可能需要正式登录才能使用');
+          navigation.goBack();
+        } else {
+          // 游客没有 profile，使用基础信息
+          setUser({
+            userId: account?.id || 0,
+            nickname: account?.userName || '游客',
+            avatarUrl: '',
+            backgroundUrl: '',
+            vipType: 0,
+          });
+          setLoginType('guest');
+          Alert.alert('提示', '游客模式已开启，部分功能受限');
+          navigation.goBack();
+        }
+      } else {
+        Alert.alert('提示', '游客登录失败，请重试');
+      }
+    } catch {
+      Alert.alert('提示', '游客登录失败，请检查网络');
+    } finally {
+      setGuestLoading(false);
+    }
+  }, [setUser, setLoginType, navigation]);
 
   const handleUidLogin = useCallback(async () => {
     if (!uid.trim()) {
@@ -305,7 +429,7 @@ export default function LoginScreen() {
   const renderPhoneLogin = () => (
     <View style={styles.methodContent}>
       <Text style={[styles.methodTitle, { color: '#ffffff' }]}>手机号登录</Text>
-      <Text style={styles.methodSubtitle}>使用手机号和密码登录</Text>
+      <Text style={styles.methodSubtitle}>使用手机号和密码登录，或使用验证码快捷登录</Text>
 
       <View style={styles.inputGroup}>
         <View style={styles.inputIconWrap}>
@@ -324,6 +448,102 @@ export default function LoginScreen() {
         />
       </View>
 
+      {/* 密码/验证码 切换 */}
+      <View style={styles.modeToggle}>
+        <TouchableOpacity
+          style={[styles.modeTab, loginMode === 'password' && styles.modeTabActive]}
+          onPress={() => setLoginMode('password')}
+        >
+          <Text style={[styles.modeTabText, loginMode === 'password' && styles.modeTabTextActive]}>密码登录</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modeTab, loginMode === 'captcha' && styles.modeTabActive]}
+          onPress={() => setLoginMode('captcha')}
+        >
+          <Text style={[styles.modeTabText, loginMode === 'captcha' && styles.modeTabTextActive]}>验证码登录</Text>
+        </TouchableOpacity>
+      </View>
+
+      {loginMode === 'password' ? (
+        <View style={styles.inputGroup}>
+          <View style={styles.inputIconWrap}>
+            <MaterialCommunityIcons name="lock-outline" size={18} color="rgba(255,255,255,0.5)" />
+          </View>
+          <TextInput
+            style={styles.loginInput}
+            placeholder="请输入密码"
+            placeholderTextColor="rgba(255,255,255,0.4)"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </View>
+      ) : (
+        <View style={styles.inputGroup}>
+          <View style={styles.inputIconWrap}>
+            <MaterialCommunityIcons name="shield-check-outline" size={18} color="rgba(255,255,255,0.5)" />
+          </View>
+          <TextInput
+            style={[styles.loginInput, { flex: 1 }]}
+            placeholder="请输入验证码"
+            placeholderTextColor="rgba(255,255,255,0.4)"
+            value={captcha}
+            onChangeText={setCaptcha}
+            keyboardType="number-pad"
+            maxLength={6}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <TouchableOpacity
+            style={[styles.captchaBtn, captchaCountdown > 0 && styles.captchaBtnDisabled]}
+            onPress={handleSendCaptcha}
+            disabled={captchaCountdown > 0 || captchaSending}
+          >
+            {captchaSending ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <Text style={styles.captchaBtnText}>
+                {captchaCountdown > 0 ? `${captchaCountdown}s` : '获取验证码'}
+              </Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <TouchableOpacity
+        style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+        onPress={handlePhoneLogin}
+        disabled={loading}
+        activeOpacity={0.8}
+      >
+        {loading ? <ActivityIndicator size="small" color="#ffffff" /> : <Text style={styles.submitButtonText}>登录</Text>}
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderEmailLogin = () => (
+    <View style={styles.methodContent}>
+      <Text style={[styles.methodTitle, { color: '#ffffff' }]}>邮箱登录</Text>
+      <Text style={styles.methodSubtitle}>使用 163 网易邮箱和密码登录</Text>
+
+      <View style={styles.inputGroup}>
+        <View style={styles.inputIconWrap}>
+          <MaterialCommunityIcons name="email-outline" size={18} color="rgba(255,255,255,0.5)" />
+        </View>
+        <TextInput
+          style={styles.loginInput}
+          placeholder="请输入邮箱"
+          placeholderTextColor="rgba(255,255,255,0.4)"
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+      </View>
+
       <View style={styles.inputGroup}>
         <View style={styles.inputIconWrap}>
           <MaterialCommunityIcons name="lock-outline" size={18} color="rgba(255,255,255,0.5)" />
@@ -332,8 +552,8 @@ export default function LoginScreen() {
           style={styles.loginInput}
           placeholder="请输入密码"
           placeholderTextColor="rgba(255,255,255,0.4)"
-          value={password}
-          onChangeText={setPassword}
+          value={emailPassword}
+          onChangeText={setEmailPassword}
           secureTextEntry
           autoCapitalize="none"
           autoCorrect={false}
@@ -342,7 +562,7 @@ export default function LoginScreen() {
 
       <TouchableOpacity
         style={[styles.submitButton, loading && styles.submitButtonDisabled]}
-        onPress={handlePhoneLogin}
+        onPress={handleEmailLogin}
         disabled={loading}
         activeOpacity={0.8}
       >
@@ -428,6 +648,7 @@ export default function LoginScreen() {
   const LOGIN_METHODS: { key: LoginMethod; label: string; icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'] }[] = [
     { key: 'qr', label: '扫码', icon: 'qrcode-scan' },
     { key: 'phone', label: '手机号', icon: 'cellphone' },
+    { key: 'email', label: '邮箱', icon: 'email-outline' },
     { key: 'cookie', label: 'Cookie', icon: 'cookie-outline' },
     { key: 'uid', label: 'UID', icon: 'identifier' },
   ];
@@ -486,8 +707,34 @@ export default function LoginScreen() {
             {/* Method Content */}
             {activeMethod === 'qr' && renderQrLogin()}
             {activeMethod === 'phone' && renderPhoneLogin()}
+            {activeMethod === 'email' && renderEmailLogin()}
             {activeMethod === 'cookie' && renderCookieLogin()}
             {activeMethod === 'uid' && renderUidLogin()}
+
+            {/* 游客模式入口 */}
+            <View style={styles.guestSection}>
+              <View style={styles.guestDivider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>或</Text>
+                <View style={styles.dividerLine} />
+              </View>
+              <TouchableOpacity
+                style={styles.guestButton}
+                onPress={handleGuestLogin}
+                disabled={guestLoading}
+                activeOpacity={0.8}
+              >
+                {guestLoading ? (
+                  <ActivityIndicator size="small" color="rgba(255,255,255,0.7)" />
+                ) : (
+                  <>
+                    <MaterialCommunityIcons name="incognito" size={18} color="rgba(255,255,255,0.7)" style={{ marginRight: 6 }} />
+                    <Text style={styles.guestButtonText}>游客模式浏览</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <Text style={styles.guestTip}>无需登录，快速体验部分功能</Text>
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -730,5 +977,94 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.4)',
     marginBottom: Spacing.xs,
     lineHeight: 16,
+  },
+
+  // ─── 手机号登录 密码/验证码切换 ───
+  modeToggle: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: BorderRadius.lg,
+    padding: 3,
+    marginBottom: Spacing.md,
+  },
+  modeTab: {
+    flex: 1,
+    paddingVertical: Spacing.sm,
+    alignItems: 'center',
+    borderRadius: BorderRadius.md,
+  },
+  modeTabActive: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  modeTabText: {
+    ...Typography.caption,
+    color: 'rgba(255,255,255,0.5)',
+    fontWeight: '500',
+  },
+  modeTabTextActive: {
+    color: '#ffffff',
+    fontWeight: '600',
+  },
+  captchaBtn: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.lg,
+    marginLeft: Spacing.sm,
+    minWidth: 90,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  captchaBtnDisabled: {
+    opacity: 0.5,
+  },
+  captchaBtnText: {
+    ...Typography.caption,
+    color: '#ffffff',
+    fontWeight: '600',
+  },
+
+  // ─── 游客模式 ───
+  guestSection: {
+    alignItems: 'center',
+    paddingTop: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+  },
+  guestDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.lg,
+    width: '100%',
+  },
+  dividerLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  dividerText: {
+    ...Typography.caption,
+    color: 'rgba(255,255,255,0.4)',
+    marginHorizontal: Spacing.md,
+  },
+  guestButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: BorderRadius.xxl,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.xl,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  guestButtonText: {
+    ...Typography.body2,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '500',
+  },
+  guestTip: {
+    ...Typography.overline,
+    color: 'rgba(255,255,255,0.3)',
+    marginTop: Spacing.sm,
   },
 });

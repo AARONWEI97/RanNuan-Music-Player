@@ -2,7 +2,7 @@ import axios, { InternalAxiosRequestConfig } from 'axios';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const DEFAULT_API_BASE_URL = 'http://192.168.1.9:3000';
+const DEFAULT_API_BASE_URL = 'http://139.9.223.233:3000';
 
 interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
   retryCount?: number;

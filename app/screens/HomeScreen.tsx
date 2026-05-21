@@ -553,7 +553,7 @@ export default function HomeScreen() {
                 <View style={[styles.sectionDot, { backgroundColor: '#22c55e' }]} />
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>热门歌手</Text>
               </View>
-              <TouchableOpacity style={styles.moreBtn} onPress={() => navigation.navigate('Search')}>
+              <TouchableOpacity style={styles.moreBtn} onPress={() => navigation.navigate('ArtistList')}>
                 <Text style={[styles.moreText, { color: colors.textSecondary }]}>更多</Text>
                 <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />
               </TouchableOpacity>

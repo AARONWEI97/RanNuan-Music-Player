@@ -3,6 +3,7 @@ import TrackPlayer, {
   Event,
   Capability,
   State,
+  AppKilledPlaybackBehavior,
   type Track,
 } from 'react-native-track-player';
 import type { SongResult } from '../types';
@@ -11,6 +12,11 @@ type ProgressUpdate = {
   position: number;
   duration: number;
   isPlaying: boolean;
+};
+
+type ActiveTrackChangedEvent = {
+  track: Track | null;
+  index: number | undefined;
 };
 
 // ==================== 全局持久化标志 ====================
@@ -24,14 +30,15 @@ if (!_g.__TP_IS_SETUP) _g.__TP_IS_SETUP = false;
 let onPlaybackEndCallback: (() => void) | null = null;
 let onProgressUpdateCallback: ((update: ProgressUpdate) => void) | null = null;
 let onReloadAndPlayCallback: (() => Promise<void>) | null = null;
-let onRemoteNextCallback: (() => void) | null = null;
+let onActiveTrackChangedCallback: ((event: ActiveTrackChangedEvent) => void) | null = null;
+// ★ RemotePrevious 回调：通知 JS 层处理上一首（队列中没有 previous track）
 let onRemotePrevCallback: (() => void) | null = null;
-let onRemotePlayCallback: (() => void) | null = null;
-let onRemotePauseCallback: (() => void) | null = null;
+// ★ ManualNext 回调：skipToNext 无可用 queue next 时的 JS fallback
+let onManualNextCallback: (() => void) | null = null;
 
 let playGeneration = 0;
+let lastActiveTrackId: string | null = null;
 let setupPromise: Promise<void> | null = null;
-let endPollTimer: ReturnType<typeof setInterval> | null = null;
 let lastKnownPosition = 0;
 let lastKnownDuration = 0;
 
@@ -51,9 +58,9 @@ export function setOnReloadAndPlay(callback: (() => Promise<void>) | null) {
   onReloadAndPlayCallback = callback;
 }
 
-export function setOnRemoteNext(callback: (() => void) | null) {
-  console.log('[TP] setOnRemoteNext:', callback ? '设置回调' : '清除回调');
-  onRemoteNextCallback = callback;
+export function setOnActiveTrackChanged(callback: ((event: ActiveTrackChangedEvent) => void) | null) {
+  console.log('[TP] setOnActiveTrackChanged:', callback ? '设置回调' : '清除回调');
+  onActiveTrackChangedCallback = callback;
 }
 
 export function setOnRemotePrev(callback: (() => void) | null) {
@@ -61,37 +68,30 @@ export function setOnRemotePrev(callback: (() => void) | null) {
   onRemotePrevCallback = callback;
 }
 
-export function setOnRemotePlay(callback: (() => void) | null) {
-  console.log('[TP] setOnRemotePlay:', callback ? '设置回调' : '清除回调');
-  onRemotePlayCallback = callback;
+export function setOnManualNext(callback: (() => void) | null) {
+  console.log('[TP] setOnManualNext:', callback ? '设置回调' : '清除回调');
+  onManualNextCallback = callback;
 }
 
-export function setOnRemotePause(callback: (() => void) | null) {
-  console.log('[TP] setOnRemotePause:', callback ? '设置回调' : '清除回调');
-  onRemotePauseCallback = callback;
-}
-
-// ==================== 播放结束检测 ====================
-
-let isHandlingEnd = false;
+// ==================== 播放结束检测（简化版，仅作 fallback）====================
+// ★ 新架构：原生队列自动切歌，Ended 事件仅在队列无下一首时触发
+// 不再需要互斥锁、轮询检测等复杂机制
+if (!_g.__TP_IS_HANDLING_END) _g.__TP_IS_HANDLING_END = false;
 let handlingEndTimer: ReturnType<typeof setTimeout> | null = null;
 
 function triggerPlaybackEnd(source: string) {
-  if (isHandlingEnd) {
+  if (_g.__TP_IS_HANDLING_END) {
     console.log(`[TP] 播放结束回调正在执行中，忽略来自 ${source} 的重复触发`);
     return;
   }
-  isHandlingEnd = true;
-  console.log(`[TP] ★★★ 播放结束触发 (来源: ${source}) ★★★`);
+  _g.__TP_IS_HANDLING_END = true;
+  console.log(`[TP] ★★★ 播放结束触发 (来源: ${source}) — 队列无下一首，JS fallback ★★★`);
   onPlaybackEndCallback?.();
 
-  // ★ 60秒兜底超时 — 正常情况下 resetPlaybackEndState() 会在新 track 加载时立即重置
-  // 之前 8s：后台播放时 GDMusic/joox 网络请求可能超过 8s，超时后
-  //   isHandlingEnd 提前重置 → 轮询再次触发 triggerPlaybackEnd → 级联切歌
-  // 使用 60s 长超时作为异常兜底，正常流程由 resetPlaybackEndState() 驱动
+  // ★ 60秒兜底超时
   if (handlingEndTimer) clearTimeout(handlingEndTimer);
   handlingEndTimer = setTimeout(() => {
-    isHandlingEnd = false;
+    _g.__TP_IS_HANDLING_END = false;
     handlingEndTimer = null;
     console.log('[TP] isHandlingEnd 安全超时重置（异常兜底）');
   }, 60000);
@@ -99,7 +99,7 @@ function triggerPlaybackEnd(source: string) {
 
 /** 新歌曲开始播放时，重置播放结束检测状态 */
 function resetPlaybackEndState() {
-  isHandlingEnd = false;
+  _g.__TP_IS_HANDLING_END = false;
   if (handlingEndTimer) {
     clearTimeout(handlingEndTimer);
     handlingEndTimer = null;
@@ -110,8 +110,7 @@ function resetPlaybackEndState() {
 
 /**
  * 注册 TrackPlayer 事件监听器（主 app 上下文）
- * ★ 包含 Remote 事件监听 — 这是通知栏/灵动岛/锁屏按钮的主要处理点
- * ★ 使用 global 标志防止热更新后重复注册
+ * ★ 新架构：利用 RNTP 原生队列自动切歌，ActiveTrackChanged 是核心事件
  */
 function registerEventListeners() {
   if (_g.__TP_LISTENERS_REGISTERED) {
@@ -123,8 +122,8 @@ function registerEventListeners() {
 
   // ========== PlaybackState ==========
   let lastTpState: State | null = null;
+  let lastKnownPlayingState = true;
   TrackPlayer.addEventListener(Event.PlaybackState, ({ state }) => {
-    // ★ 精简日志：只在状态变化时输出
     if (state !== lastTpState) {
       const stateName = Object.entries(State).find(([, v]) => v === state)?.[0] || String(state);
       console.log(`[TP] PlaybackState: ${stateName}`);
@@ -132,12 +131,13 @@ function registerEventListeners() {
     }
 
     if (state === State.Ended) {
+      // ★ Fallback：队列无下一首时才触发 JS 层处理
       triggerPlaybackEnd('PlaybackState.Ended');
     } else if (state === State.Loading || state === State.Playing) {
-      // ★ 新歌曲开始加载/播放 → 重置播放结束检测状态
-      // 防止轮询残留的 Ended 状态在新歌播放后再次触发
       resetPlaybackEndState();
     }
+
+    lastKnownPlayingState = state === State.Playing;
 
     onProgressUpdateCallback?.({
       position: lastKnownPosition,
@@ -150,74 +150,103 @@ function registerEventListeners() {
   TrackPlayer.addEventListener(Event.PlaybackProgressUpdated, ({ position, duration }) => {
     lastKnownPosition = position;
     lastKnownDuration = duration;
-    onProgressUpdateCallback?.({ position, duration, isPlaying: true });
+    onProgressUpdateCallback?.({ position, duration, isPlaying: lastKnownPlayingState });
   });
 
   // ========== ActiveTrackChanged ==========
-  TrackPlayer.addEventListener(Event.PlaybackActiveTrackChanged, ({ track, index }) => {
+  // ★★★ 新架构核心事件：原生队列自动切歌后触发 ★★★
+  // 当原生层自动播放队列中的下一首时，此事件触发
+  // JS 层只需同步 zustand 状态 + 预加载下下首
+  TrackPlayer.addEventListener(Event.PlaybackActiveTrackChanged, async ({ track, index }) => {
     console.log(`[TP] ActiveTrackChanged: index=${index}, track=${track ? track.title : 'null'}`);
-    if (!track && index === undefined) {
-      triggerPlaybackEnd('ActiveTrackChanged(track=null)');
+
+    if (!track || index === undefined || index < 0) {
+      // track 为空：队列被清空（reset/load 时会短暂触发），忽略
+      return;
     }
+
+    // ★ 去重：同一首歌的 ActiveTrackChanged 可能触发多次（reset+add+play 流程）
+    if (track.id === lastActiveTrackId) {
+      console.log(`[TP] ActiveTrackChanged 去重: "${track.title}" 已处理，跳过`);
+      return;
+    }
+    lastActiveTrackId = track.id;
+
+    // ★ 不在 ActiveTrackChanged 里异步清理队列 — 避免竞态风险
+    // addNextToQueue 在添加前会基于 getActiveTrack() 位置自行管理
+    // 只在 playSong(reset) 时清空整个队列
+
+    // 通知 usePlayer 同步 zustand 状态 + 预加载下一首
+    onActiveTrackChangedCallback?.({ track, index });
   });
 
   // ========== PlaybackError ==========
+  let lastPlaybackErrorTime = 0;
   TrackPlayer.addEventListener(Event.PlaybackError, ({ message }) => {
     console.error('[TP] PlaybackError:', message);
+    const now = Date.now();
+    if (now - lastPlaybackErrorTime < 5000) {
+      console.log('[TP] PlaybackError 防抖：距上次错误不足 5 秒，跳过 reload');
+      return;
+    }
+    lastPlaybackErrorTime = now;
+    if (onReloadAndPlayCallback) {
+      console.log('[TP] PlaybackError → 触发 onReloadAndPlay 恢复');
+      setTimeout(() => onReloadAndPlayCallback?.(), 500);
+    }
   });
 
   // ========== RemotePlay ==========
-  // ★★★ PlaybackService 已直接调用 play()（零延迟）★★★
-  // 这里只处理「无 track 需要重载」的特殊情况
-  // 不做 getPlaybackState() 预检查，避免 bridge 竞争
   TrackPlayer.addEventListener(Event.RemotePlay, async () => {
     console.log('[TP-Remote] RemotePlay');
     try {
-      onRemotePlayCallback?.();
+      await TrackPlayer.play();
     } catch (e) {
       console.error('[TP-Remote] RemotePlay 错误:', e);
     }
   });
 
   // ========== RemotePause ==========
-  // ★★★ PlaybackService 已直接调用 pause()（零延迟）★★★
   TrackPlayer.addEventListener(Event.RemotePause, async () => {
     console.log('[TP-Remote] RemotePause');
     try {
-      onRemotePauseCallback?.();
+      await TrackPlayer.pause();
     } catch (e) {
       console.error('[TP-Remote] RemotePause 错误:', e);
     }
   });
 
   // ========== RemoteNext ==========
+  // ★ skipToNext 在队列中有下一首时零延迟生效
+  // ★ 如果队列只剩当前 track（如 prev 后预加载未完成），fallback 到 JS 层手动切歌
   TrackPlayer.addEventListener(Event.RemoteNext, async () => {
     console.log('[TP-Remote] RemoteNext');
     try {
-      if (onRemoteNextCallback) {
-        onRemoteNextCallback();
-      } else {
+      const queue = await TrackPlayer.getQueue();
+      const activeTrack = await TrackPlayer.getActiveTrack();
+      const activeIdx = activeTrack ? queue.findIndex((t: Track) => t.id === activeTrack.id) : -1;
+
+      if (activeIdx >= 0 && activeIdx < queue.length - 1) {
+        // 队列有下一首，直接 skip
         await TrackPlayer.skipToNext();
+      } else {
+        // 队列无下一首（如 prev 后预加载未完成），交给 JS 处理
+        console.log('[TP-Remote] 队列无下一首，触发 JS fallback');
+        onManualNextCallback?.();
       }
     } catch (e) {
       console.error('[TP-Remote] RemoteNext 错误:', e);
-      try { await TrackPlayer.skipToNext(); } catch {}
+      // 异常时也尝试 JS fallback
+      onManualNextCallback?.();
     }
   });
 
   // ========== RemotePrevious ==========
+  // ★ 队列中没有上一首（队列结构是 [current, next]），skipToPrevious 不适用
+  // 直接通知 JS 层处理上一首逻辑
   TrackPlayer.addEventListener(Event.RemotePrevious, async () => {
-    console.log('[TP-Remote] RemotePrevious');
-    try {
-      if (onRemotePrevCallback) {
-        onRemotePrevCallback();
-      } else {
-        await TrackPlayer.skipToPrevious();
-      }
-    } catch (e) {
-      console.error('[TP-Remote] RemotePrevious 错误:', e);
-      try { await TrackPlayer.skipToPrevious(); } catch {}
-    }
+    console.log('[TP-Remote] RemotePrevious → 通知 JS 层处理');
+    onRemotePrevCallback?.();
   });
 
   // ========== RemoteSeek ==========
@@ -239,49 +268,8 @@ function registerEventListeners() {
     }
   });
 
-  startEndPolling();
-}
-
-function startEndPolling() {
-  stopEndPolling();
-  console.log('[TP] 启动播放结束轮询检测 (5秒间隔)');
-
-  endPollTimer = setInterval(async () => {
-    try {
-      // ★ 合并为一次 bridge 调用：先 getProgress（轻量），
-      // 再根据 progress 判断是否需要 getPlaybackState
-      const progress = await TrackPlayer.getProgress();
-
-      // 快速路径：进度未接近结束，不需要检查状态
-      if (progress.duration <= 0 || progress.position < progress.duration - 2) {
-        return;
-      }
-
-      // 进度接近结束，检查播放状态
-      const state = await TrackPlayer.getPlaybackState();
-
-      if (state.state === State.Ended) {
-        triggerPlaybackEnd('轮询-State.Ended');
-        return;
-      }
-
-      if (
-        progress.position >= progress.duration - 0.5 &&
-        state.state !== State.Buffering &&
-        state.state !== State.Paused
-      ) {
-        console.log(`[TP] 轮询检测到播放接近结束: pos=${progress.position.toFixed(1)}, dur=${progress.duration.toFixed(1)}`);
-        triggerPlaybackEnd('轮询-position>=duration');
-      }
-    } catch {}
-  }, 5000);
-}
-
-function stopEndPolling() {
-  if (endPollTimer) {
-    clearInterval(endPollTimer);
-    endPollTimer = null;
-  }
+  // ★ 不再需要 endPolling — 原生队列自动处理切歌
+  // PlaybackState.Ended 只在队列无下一首时触发（fallback）
 }
 
 // ==================== 播放器生命周期 ====================
@@ -301,7 +289,11 @@ export async function setupPlayer(): Promise<void> {
   setupPromise = (async () => {
     try {
       try {
-        await TrackPlayer.setupPlayer();
+        await TrackPlayer.setupPlayer({
+          minBuffer: 30,
+          maxBuffer: 120,
+          backBuffer: 30,
+        });
         console.log('[TP] setupPlayer 成功');
       } catch (setupError: any) {
         if (setupError?.message?.includes('already been initialized')) {
@@ -320,8 +312,6 @@ export async function setupPlayer(): Promise<void> {
           Capability.SkipToPrevious,
           Capability.SeekTo,
         ],
-        // ★ 紧凑通知/Now Bar(灵动岛) 显示的按钮
-        // 最多3个：上一首 + 播放/暂停 + 下一首
         compactCapabilities: [
           Capability.SkipToPrevious,
           Capability.Play,
@@ -336,8 +326,11 @@ export async function setupPlayer(): Promise<void> {
           Capability.SeekTo,
         ],
         progressUpdateEventInterval: 1,
-        // ★ Android 通知栏主题色（与应用主色 #023c69 一致）
         color: 0x023c69,
+        android: {
+          appKilledPlaybackBehavior:
+            AppKilledPlaybackBehavior.ContinuePlayback,
+        },
       });
       console.log('[TP] updateOptions 完成');
 
@@ -367,47 +360,104 @@ export function songToTrack(song: SongResult, url: string): Track {
   };
 }
 
+/**
+ * ★★★ 新架构核心：playSong 使用 reset()+add()+play() 替代 load() ★★★
+ * reset() 清空队列 → add() 加入当前歌曲 → play() 开始播放
+ * 这样原生队列里有当前歌曲，后续 addNextToQueue 可以追加下一首
+ */
 export async function playSong(song: SongResult, url: string): Promise<void> {
   const thisGeneration = ++playGeneration;
   console.log(`[TP] playSong: "${song.name}" (gen=${thisGeneration})`);
 
-  // ★ 新歌播放 → 立即重置播放结束检测，防止级联触发
+  // 新歌播放 → 重置播放结束检测
   resetPlaybackEndState();
+  // ★ 清除去重标志，允许新歌触发 ActiveTrackChanged
+  lastActiveTrackId = null;
 
   try {
-    // ★ 使用 load() 替代 reset()+add()+play()
-    // load() 是 RNTP v4 提供的替换单曲 API：
-    //   - 不需要 reset，直接替换当前 track
-    //   - 自动开始播放（playWhenReady 默认 true）
-    //   - 在后台也能正常工作
-    //   - 避免了 reset 后需要重新 prepare 的问题
     const track = songToTrack(song, url);
-    await TrackPlayer.load(track);
+    await TrackPlayer.reset();
+    if (thisGeneration !== playGeneration) return;
+    await TrackPlayer.add(track);
     if (thisGeneration !== playGeneration) {
       await TrackPlayer.reset();
       return;
     }
-
-    // 确保 playWhenReady = true，使播放器准备就绪后自动播放
-    await TrackPlayer.setPlayWhenReady(true);
+    await TrackPlayer.play();
     console.log(`[TP] playSong 成功: "${song.name}" (gen=${thisGeneration})`);
   } catch (e) {
     console.warn(`[TP] playSong error (gen=${thisGeneration}):`, e);
-    // 回退方案：如果 load() 失败，尝试 reset+add+play
-    try {
-      await TrackPlayer.reset();
-      if (thisGeneration !== playGeneration) return;
-      const track = songToTrack(song, url);
-      await TrackPlayer.add(track);
-      if (thisGeneration !== playGeneration) {
-        await TrackPlayer.reset();
-        return;
-      }
-      await TrackPlayer.play();
-      console.log(`[TP] playSong 回退成功: "${song.name}" (gen=${thisGeneration})`);
-    } catch (e2) {
-      console.warn(`[TP] playSong fallback error (gen=${thisGeneration}):`, e2);
+  }
+}
+
+/**
+ * ★★★ 新架构核心：将预加载的下一首加入原生队列 ★★★
+ * 原生层会在当前歌曲结束后自动播放队列里的下一首
+ * 队列始终维持 [current, next] 两个 track
+ */
+export async function addNextToQueue(song: SongResult, url: string): Promise<void> {
+  try {
+    // ★ Promise.all 并发请求，减少两次 await 之间的竞态窗口
+    const [queue, currentTrack] = await Promise.all([
+      TrackPlayer.getQueue(),
+      TrackPlayer.getActiveTrack(),
+    ]);
+
+    // 找到当前 track 在队列中的位置
+    const currentIdx = currentTrack
+      ? queue.findIndex(t => t.id === currentTrack.id)
+      : 0;
+
+    // ★ LOOP 模式：如果下一首就是当前歌曲（同 ID），跳过添加
+    // 队列不需要重复 track，JS fallback (onPlaybackEnd) 会处理循环重播
+    const nextTrackId = String(song.id);
+    if (currentTrack && nextTrackId === String(currentTrack.id)) {
+      console.log(`[TP] addNextToQueue: "${song.name}" 与当前歌曲相同 (LOOP)，跳过`);
+      return;
     }
+
+    // ★ 如果新的 next track 已经在队列中，跳过（防止重复 add）
+    const alreadyInQueue = queue.some((t, i) => i > currentIdx && t.id === nextTrackId);
+    if (alreadyInQueue) {
+      console.log(`[TP] addNextToQueue: "${song.name}" 已在队列中，跳过`);
+      return;
+    }
+
+    // 移除当前播放位置之后的所有旧 track（保持队列只有 [current, next]）
+    const indicesToRemove: number[] = [];
+    for (let i = currentIdx + 1; i < queue.length; i++) {
+      indicesToRemove.push(i);
+    }
+    if (indicesToRemove.length > 0) {
+      await TrackPlayer.remove(indicesToRemove);
+    }
+
+    const track = songToTrack(song, url);
+    await TrackPlayer.add(track);
+    console.log(`[TP] addNextToQueue: "${song.name}" 已加入原生队列`);
+  } catch (e) {
+    console.warn('[TP] addNextToQueue error:', e);
+  }
+}
+
+/** 清除原生队列中的"下一首"track（播放模式变更时使用） */
+export async function clearNextInQueue(): Promise<void> {
+  try {
+    const [queue, currentTrack] = await Promise.all([
+      TrackPlayer.getQueue(),
+      TrackPlayer.getActiveTrack(),
+    ]);
+    const currentIdx = currentTrack ? queue.findIndex(t => t.id === currentTrack.id) : 0;
+    const indicesToRemove: number[] = [];
+    for (let i = currentIdx + 1; i < queue.length; i++) {
+      indicesToRemove.push(i);
+    }
+    if (indicesToRemove.length > 0) {
+      await TrackPlayer.remove(indicesToRemove);
+      console.log(`[TP] clearNextInQueue: 移除 ${indicesToRemove.length} 个 next track`);
+    }
+  } catch (e) {
+    console.warn('[TP] clearNextInQueue error:', e);
   }
 }
 

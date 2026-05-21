@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { getUserAccount, getUserPlaylist } from '../api/user';
+import { getUserAccount, getUserPlaylist, getUserSubcount, getUserLevel } from '../api/user';
+import { followUser } from '../api/user';
 import { logout as apiLogout } from '../api/login';
 import { TOKEN_KEY } from '../api/request';
 
@@ -27,12 +28,40 @@ interface UserPlaylist {
   subscribed?: boolean;
 }
 
+interface SubcountData {
+  programCount: number;
+  djRadioCount: number;
+  mvCount: number;
+  artistCount: number;
+  newProgramCount: number;
+  createDjRadioCount: number;
+  createdPlaylistCount: number;
+  subPlaylistCount: number;
+  code: number;
+}
+
+interface LevelData {
+  userId: number;
+  info: string;
+  progress: number;
+  nextPlayCount: number;
+  nextLoginCount: number;
+  nowPlayCount: number;
+  nowLoginCount: number;
+  level: number;
+}
+
 interface UserState {
   user: UserData | null;
-  loginType: 'token' | 'cookie' | 'qr' | 'uid' | 'phone' | null;
+  loginType: 'token' | 'cookie' | 'qr' | 'uid' | 'phone' | 'guest' | null;
   collectedAlbumIds: Set<number>;
   playlists: UserPlaylist[];
   playlistsLoading: boolean;
+  subcount: SubcountData | null;
+  subcountLoading: boolean;
+  levelData: LevelData | null;
+  levelLoading: boolean;
+  followingMap: Record<number, boolean>;
 }
 
 interface UserActions {
@@ -44,6 +73,9 @@ interface UserActions {
   removeCollectedAlbum: (albumId: number) => void;
   isAlbumCollected: (albumId: number) => boolean;
   fetchUserPlaylists: () => Promise<void>;
+  fetchSubcount: () => Promise<void>;
+  fetchLevel: () => Promise<void>;
+  toggleFollow: (userId: number, currentFollowed: boolean) => Promise<boolean>;
   checkLoginStatus: () => Promise<boolean>;
 }
 
@@ -55,6 +87,11 @@ export const useUserStore = create<UserState & UserActions>()(
       collectedAlbumIds: new Set<number>(),
       playlists: [],
       playlistsLoading: false,
+      subcount: null,
+      subcountLoading: false,
+      levelData: null,
+      levelLoading: false,
+      followingMap: {},
 
       setUser: (userData) => set({ user: userData }),
 
@@ -70,6 +107,9 @@ export const useUserStore = create<UserState & UserActions>()(
           loginType: null,
           collectedAlbumIds: new Set<number>(),
           playlists: [],
+          subcount: null,
+          levelData: null,
+          followingMap: {},
         });
       },
 
@@ -122,12 +162,63 @@ export const useUserStore = create<UserState & UserActions>()(
         }
       },
 
+      fetchSubcount: async () => {
+        const { user } = get();
+        if (!user?.userId) return;
+
+        set({ subcountLoading: true });
+        try {
+          const res = await getUserSubcount();
+          if (res?.data?.code === 200) {
+            set({ subcount: res.data });
+          }
+        } catch {
+        } finally {
+          set({ subcountLoading: false });
+        }
+      },
+
+      fetchLevel: async () => {
+        const { user } = get();
+        if (!user?.userId) return;
+
+        set({ levelLoading: true });
+        try {
+          const res = await getUserLevel();
+          if (res?.data?.data) {
+            set({ levelData: res.data.data });
+          }
+        } catch {
+        } finally {
+          set({ levelLoading: false });
+        }
+      },
+
+      toggleFollow: async (userId, currentFollowed) => {
+        try {
+          const t = currentFollowed ? 0 : 1;
+          const res = await followUser(userId, t);
+          if (res?.data?.code === 200) {
+            const { followingMap } = get();
+            set({
+              followingMap: {
+                ...followingMap,
+                [userId]: !currentFollowed,
+              },
+            });
+            return true;
+          }
+          return false;
+        } catch {
+          return false;
+        }
+      },
+
       checkLoginStatus: async () => {
         try {
           const token = await AsyncStorage.getItem(TOKEN_KEY);
           if (!token) return false;
 
-          // UID login: no real cookie, just restore persisted user data
           if (token.startsWith('uid:')) {
             return !!get().user;
           }
@@ -148,6 +239,11 @@ export const useUserStore = create<UserState & UserActions>()(
                 account,
               },
             });
+            // 登录成功后自动拉取统计/等级数据
+            if (get().loginType !== 'uid') {
+              get().fetchSubcount();
+              get().fetchLevel();
+            }
             return true;
           }
           return false;

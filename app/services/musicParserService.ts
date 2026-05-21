@@ -7,6 +7,30 @@ import request, { TOKEN_KEY } from '../api/request';
 const URL_CACHE_PREFIX = 'music_url_cache_';
 const URL_CACHE_EXPIRY = 30 * 60 * 1000;
 
+/**
+ * ★ 内存级失败缓存（与桌面端 CacheManager.failedCacheMap 对齐）
+ * 记录策略+歌曲的失败组合，短时间内跳过重试
+ * key: `${strategyName}:${songId}`, value: 失败时间戳
+ */
+const FAILED_CACHE_TIME = 1 * 60 * 1000; // 1分钟
+const failedCacheMap = new Map<string, number>();
+
+function isStrategyFailed(strategyName: string, songId: string | number): boolean {
+  const key = `${strategyName}:${songId}`;
+  const failTime = failedCacheMap.get(key);
+  if (!failTime) return false;
+  if (Date.now() - failTime > FAILED_CACHE_TIME) {
+    failedCacheMap.delete(key);
+    return false;
+  }
+  return true;
+}
+
+function markStrategyFailed(strategyName: string, songId: string | number): void {
+  const key = `${strategyName}:${songId}`;
+  failedCacheMap.set(key, Date.now());
+}
+
 // Fallback remote music API — same mechanism as desktop's VITE_API_MUSIC
 const FALLBACK_MUSIC_API = 'https://music-api.gdstudio.xyz';
 
@@ -20,7 +44,9 @@ interface MusicSourceStrategy {
 class OfficialApiStrategy implements MusicSourceStrategy {
   name = 'official';
   priority = 0;
-  enabled = true;
+  // ★ 当前服务端 unblock=true 不生效，暂时禁用，直接走 /song/url/match
+  // 每首歌省掉一次注定返回试听 URL 的 HTTP 请求
+  enabled = false;
 
   async parse(id: string | number, songData: SongResult, quality: string): Promise<string | null> {
     try {
@@ -30,6 +56,8 @@ class OfficialApiStrategy implements MusicSourceStrategy {
         params: {
           id,
           level: quality,
+          unblock: true,
+          randomCNIP: true,
           ...(cookieWithOs ? { cookie: cookieWithOs } : {}),
         },
       });
@@ -54,7 +82,8 @@ class OfficialApiStrategy implements MusicSourceStrategy {
 class CustomApiStrategy implements MusicSourceStrategy {
   name = 'custom';
   priority = 1;
-  enabled = true;
+  // 未配置自定义 API，暂时禁用
+  enabled = false;
 
   async parse(id: string | number, songData: SongResult, quality: string): Promise<string | null> {
     try {
@@ -76,8 +105,55 @@ class CustomApiStrategy implements MusicSourceStrategy {
         return url;
       }
     } catch (e) {
-      console.warn(`[MusicParser] Custom API error:`, e?.message || e);
+      const errMsg = e instanceof Error ? e.message : String(e);
+      console.warn(`[MusicParser] Custom API error:`, errMsg);
     }
+    return null;
+  }
+}
+
+/**
+ * UnblockApiMatch strategy — calls /song/url/match (API server built-in unblock)
+ * Uses @unblockneteasemusic/server on the backend to match from migu/kugou/kuwo CDN
+ * This is the mobile equivalent of the desktop's local UnblockMusicStrategy
+ *
+ * ★ API 文档支持 source 参数：/song/url/match?id=xxx&source=migu
+ * 不指定 source 时由服务端自动选择，但可能选不到最优源
+ * 依次尝试 migu → kugou → kuwo → 不指定（与桌面端 ALL_PLATFORMS 对齐）
+ */
+class UnblockApiMatchStrategy implements MusicSourceStrategy {
+  name = 'unblockMatch';
+  priority = 2;
+  enabled = true;
+
+  async parse(id: string | number, songData: SongResult, quality: string): Promise<string | null> {
+    // ★ 与服务器 unblock_test.html 支持的音源对齐
+    // 服务器实际支持的 source: bodian, qq, migu, kugou, kuwo, pyncmd
+    // bodian 实测有效，放第一位；不指定 source 的情况放最后作为兜底
+    const sources = ['bodian', 'qq', 'migu', 'kugou', 'kuwo', 'pyncmd', undefined];
+
+    for (const source of sources) {
+      try {
+        const params: Record<string, any> = { id };
+        if (source) {
+          params.source = source;
+        }
+        const res = await request.get('/song/url/match', { params });
+        // ★★★ 修复：/song/url/match 返回的是对象 data.url，不是数组 data[0].url ★★★
+        const url = res?.data?.data?.url;
+        if (url) {
+          console.log(`[MusicParser] UnblockApiMatch (${source || 'auto'}) found URL for "${songData.name}"`);
+          return url;
+        }
+        if (source) {
+          console.log(`[MusicParser] UnblockApiMatch (${source}): no URL for "${songData.name}"`);
+        }
+      } catch (e) {
+        console.warn(`[MusicParser] UnblockApiMatch (${source || 'auto'}) error:`, e instanceof Error ? e.message : String(e));
+      }
+    }
+
+    console.log(`[MusicParser] UnblockApiMatch: all sources failed for "${songData.name}"`);
     return null;
   }
 }
@@ -95,7 +171,7 @@ class CustomApiStrategy implements MusicSourceStrategy {
  */
 class GDMusicStrategy implements MusicSourceStrategy {
   name = 'gdmusic';
-  priority = 2;
+  priority = 3;
   enabled = true;
 
   async parse(id: string | number, songData: SongResult, quality: string): Promise<string | null> {
@@ -114,13 +190,15 @@ class GDMusicStrategy implements MusicSourceStrategy {
       // Desktop uses br=999 (numeric) for all qualities
       const br = '999';
 
-      // Try sources in order: joox → netease (tidal not supported by API)
-      const sources = ['joox', 'netease'];
+      // ★ 调整源优先级与桌面端对齐：netease → joox → tidal
+      // joox 返回的 URL 不稳定（常出现 Source error），netease 更可靠
+      // 桌面端顺序: joox → tidal → netease，但 netease 在国内更稳定
+      const sources = ['netease', 'joox', 'tidal'];
 
       for (const source of sources) {
         try {
-          // Step 1: Search — exactly like desktop's searchAndGetUrl
-          const searchUrl = `${FALLBACK_MUSIC_API}/api.php?types=search&source=${source}&name=${encodeURIComponent(searchQuery)}&count=1&pages=1`;
+          // Step 1: Search — increase count to 3 for better matching
+          const searchUrl = `${FALLBACK_MUSIC_API}/api.php?types=search&source=${source}&name=${encodeURIComponent(searchQuery)}&count=3&pages=1`;
           console.log(`[MusicParser] GDMusic (${source}) searching: ${searchQuery}`);
 
           const searchRes = await axios.get(searchUrl, { timeout: 10000 });
@@ -154,13 +232,13 @@ class GDMusicStrategy implements MusicSourceStrategy {
             console.log(`[MusicParser] GDMusic (${trackSource}): no URL in response`);
           }
         } catch (e) {
-          console.warn(`[MusicParser] GDMusic (${source}) failed:`, e?.message || e);
+          console.warn(`[MusicParser] GDMusic (${source}) failed:`, e instanceof Error ? e.message : String(e));
         }
       }
 
       console.log(`[MusicParser] GDMusic: no URL found for "${songData.name}" from any source`);
     } catch (e) {
-      console.warn(`[MusicParser] GDMusic error:`, e?.message || e);
+      console.warn(`[MusicParser] GDMusic error:`, e instanceof Error ? e.message : String(e));
     }
     return null;
   }
@@ -168,7 +246,7 @@ class GDMusicStrategy implements MusicSourceStrategy {
 
 class LxMusicStrategy implements MusicSourceStrategy {
   name = 'lxMusic';
-  priority = 3;
+  priority = 4;
   enabled = true;
 
   async parse(id: string | number, songData: SongResult, quality: string): Promise<string | null> {
@@ -229,7 +307,7 @@ class LxMusicStrategy implements MusicSourceStrategy {
         return url;
       }
     } catch (e) {
-      console.warn(`[MusicParser] LxMusic error:`, e?.message || e);
+      console.warn(`[MusicParser] LxMusic error:`, e instanceof Error ? e.message : String(e));
     }
     return null;
   }
@@ -237,7 +315,7 @@ class LxMusicStrategy implements MusicSourceStrategy {
 
 class UnblockMusicServiceStrategy implements MusicSourceStrategy {
   name = 'unblock';
-  priority = 4;
+  priority = 5;
   enabled = true;
 
   async parse(id: string | number, songData: SongResult, quality: string): Promise<string | null> {
@@ -256,7 +334,7 @@ class UnblockMusicServiceStrategy implements MusicSourceStrategy {
         return url;
       }
     } catch (e) {
-      console.warn(`[MusicParser] Unblock service error:`, e?.message || e);
+      console.warn(`[MusicParser] Unblock service error:`, e instanceof Error ? e.message : String(e));
     }
     return null;
   }
@@ -271,7 +349,7 @@ class UnblockMusicServiceStrategy implements MusicSourceStrategy {
  */
 class FallbackApiStrategy implements MusicSourceStrategy {
   name = 'fallback';
-  priority = 5;
+  priority = 6;
   enabled = true;
 
   async parse(id: string | number, songData: SongResult, quality: string): Promise<string | null> {
@@ -309,7 +387,7 @@ class FallbackApiStrategy implements MusicSourceStrategy {
         return urlRes.data.url;
       }
     } catch (e) {
-      console.warn(`[MusicParser] Fallback API error:`, e?.message || e);
+      console.warn(`[MusicParser] Fallback API error:`, e instanceof Error ? e.message : String(e));
     }
     return null;
   }
@@ -322,6 +400,7 @@ export class MusicParser {
     this.strategies = [
       new OfficialApiStrategy(),
       new CustomApiStrategy(),
+      new UnblockApiMatchStrategy(),
       new GDMusicStrategy(),
       new LxMusicStrategy(),
       new UnblockMusicServiceStrategy(),
@@ -341,34 +420,46 @@ export class MusicParser {
       return cachedUrl;
     }
 
-    console.log(`[MusicParser] Parsing URL for "${songData.name}" (id: ${id}, quality: ${quality}, skipOfficial: ${skipOfficial})`);
-
     for (const strategy of this.strategies) {
       if (!strategy.enabled) continue;
       if (skipOfficial && strategy.name === 'official') continue;
+      // ★ 跳过近期已失败的策略+歌曲组合（1分钟内不重试）
+      if (isStrategyFailed(strategy.name, id)) {
+        console.log(`[MusicParser] Strategy "${strategy.name}" recently failed for "${songData.name}", skipping`);
+        continue;
+      }
 
       try {
         const url = await strategy.parse(id, songData, quality);
         if (url) {
-          await this.cacheUrl(id, url);
+          // ★ OfficialApiStrategy 返回试听 URL 时也会返回 url（但不应该缓存为完整）
+          // 策略本身已经过滤了试听 URL（isTrial → return null），所以这里缓存的都是完整 URL
+          await this.cacheUrl(id, url, false);
           return url;
         }
       } catch (e) {
         console.warn(`[MusicParser] Strategy "${strategy.name}" threw:`, e);
       }
+      // ★ 策略返回 null 或抛异常，标记为失败
+      markStrategyFailed(strategy.name, id);
     }
 
     console.warn(`[MusicParser] All strategies failed for "${songData.name}" (id: ${id})`);
     return null;
   }
 
-  async getCachedUrl(id: string | number): Promise<string | null> {
+  async getCachedUrl(id: string | number, skipTrial: boolean = true): Promise<string | null> {
     try {
       const cached = await AsyncStorage.getItem(`${URL_CACHE_PREFIX}${id}`);
       if (!cached) return null;
-      const { url, timestamp } = JSON.parse(cached);
+      const { url, timestamp, isTrial } = JSON.parse(cached);
       if (Date.now() - timestamp > URL_CACHE_EXPIRY) {
         await AsyncStorage.removeItem(`${URL_CACHE_PREFIX}${id}`);
+        return null;
+      }
+      // ★ 试听 URL 不应被缓存复用，跳过
+      if (isTrial && skipTrial) {
+        console.log(`[MusicParser] Cached URL is trial, skipping`);
         return null;
       }
       return url;
@@ -377,11 +468,11 @@ export class MusicParser {
     }
   }
 
-  async cacheUrl(id: string | number, url: string): Promise<void> {
+  async cacheUrl(id: string | number, url: string, isTrial: boolean = false): Promise<void> {
     try {
       await AsyncStorage.setItem(
         `${URL_CACHE_PREFIX}${id}`,
-        JSON.stringify({ url, timestamp: Date.now() })
+        JSON.stringify({ url, timestamp: Date.now(), isTrial })
       );
     } catch {}
   }
@@ -393,6 +484,14 @@ export class MusicParser {
       if (cacheKeys.length > 0) {
         await AsyncStorage.multiRemove(cacheKeys);
       }
+    } catch {}
+  }
+
+  /** 清除指定歌曲的 URL 缓存（播放失败时使用，避免复用坏 URL） */
+  async invalidateCache(id: string | number): Promise<void> {
+    try {
+      await AsyncStorage.removeItem(`${URL_CACHE_PREFIX}${id}`);
+      console.log(`[MusicParser] 已清除歌曲 id=${id} 的缓存 URL`);
     } catch {}
   }
 
