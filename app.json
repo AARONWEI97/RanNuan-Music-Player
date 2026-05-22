@@ -17,7 +17,9 @@
       "bundleIdentifier": "com.rannuanmusic.player",
       "buildNumber": "1",
       "infoPlist": {
-        "UIBackgroundModes": ["audio"],
+        "UIBackgroundModes": [
+          "audio"
+        ],
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
         }
@@ -38,20 +40,35 @@
         "WAKE_LOCK",
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_MEDIA_PLAYBACK",
-        "POST_NOTIFICATIONS"
-      ],
-      "usesCleartextTraffic": true
+        "POST_NOTIFICATIONS",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.INTERNET"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      [
         "expo-file-system",
         {
           "location": "documentDirectory"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "1bec838c-4110-4cb4-8f0a-c827df80d3a7"
+      }
+    }
   }
 }
