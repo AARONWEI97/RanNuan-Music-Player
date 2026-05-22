@@ -89,7 +89,6 @@
 |:---:|:---:|:---:|
 | ![歌手](assets/screenshots/artist.png) | ![用户](assets/screenshots/user.png) | ![设置](assets/screenshots/settings.png) |
 
-> 💡 截图路径：`assets/screenshots/`，放入对应 png 文件即可展示
 
 ---
 
