@@ -3,7 +3,8 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { getUserAccount, getUserPlaylist, getUserSubcount, getUserLevel } from '../api/user';
-import { followUser } from '../api/user';
+import { followUser, getUserCreatePlaylist, getUserCollectPlaylist, getUserSocialStatus, getUserBinding } from '../api/user';
+import { getFollowMixed } from '../api/user';
 import { logout as apiLogout } from '../api/login';
 import { TOKEN_KEY } from '../api/request';
 
@@ -57,11 +58,16 @@ interface UserState {
   collectedAlbumIds: Set<number>;
   playlists: UserPlaylist[];
   playlistsLoading: boolean;
+  createdPlaylists: UserPlaylist[];
+  collectedPlaylists: UserPlaylist[];
   subcount: SubcountData | null;
   subcountLoading: boolean;
   levelData: LevelData | null;
   levelLoading: boolean;
   followingMap: Record<number, boolean>;
+  accountInfo: any | null;
+  socialStatus: any | null;
+  bindingInfo: any | null;
 }
 
 interface UserActions {
@@ -73,8 +79,14 @@ interface UserActions {
   removeCollectedAlbum: (albumId: number) => void;
   isAlbumCollected: (albumId: number) => boolean;
   fetchUserPlaylists: () => Promise<void>;
+  fetchCreatedPlaylists: () => Promise<void>;
+  fetchCollectedPlaylists: () => Promise<void>;
   fetchSubcount: () => Promise<void>;
   fetchLevel: () => Promise<void>;
+  fetchAccountInfo: () => Promise<void>;
+  fetchSocialStatus: () => Promise<void>;
+  fetchBindingInfo: () => Promise<void>;
+  fetchFollowMixed: (scene?: number) => Promise<void>;
   toggleFollow: (userId: number, currentFollowed: boolean) => Promise<boolean>;
   checkLoginStatus: () => Promise<boolean>;
 }
@@ -87,11 +99,16 @@ export const useUserStore = create<UserState & UserActions>()(
       collectedAlbumIds: new Set<number>(),
       playlists: [],
       playlistsLoading: false,
+      createdPlaylists: [],
+      collectedPlaylists: [],
       subcount: null,
       subcountLoading: false,
       levelData: null,
       levelLoading: false,
       followingMap: {},
+      accountInfo: null,
+      socialStatus: null,
+      bindingInfo: null,
 
       setUser: (userData) => set({ user: userData }),
 
@@ -107,9 +124,14 @@ export const useUserStore = create<UserState & UserActions>()(
           loginType: null,
           collectedAlbumIds: new Set<number>(),
           playlists: [],
+          createdPlaylists: [],
+          collectedPlaylists: [],
           subcount: null,
           levelData: null,
           followingMap: {},
+          accountInfo: null,
+          socialStatus: null,
+          bindingInfo: null,
         });
       },
 
@@ -160,6 +182,44 @@ export const useUserStore = create<UserState & UserActions>()(
         } finally {
           set({ playlistsLoading: false });
         }
+      },
+
+      fetchCreatedPlaylists: async () => {
+        const { user } = get();
+        if (!user?.userId) return;
+        try {
+          const res = await getUserCreatePlaylist({ uid: user.userId, limit: 100 });
+          const data = res?.data?.playlist;
+          if (Array.isArray(data)) {
+            set({
+              createdPlaylists: data.map((p: any) => ({
+                id: p.id, name: p.name, coverImgUrl: p.coverImgUrl || '',
+                trackCount: p.trackCount || 0, playCount: p.playCount || 0,
+                creator: { nickname: p.creator?.nickname || '' },
+                subscribed: p.subscribed || false,
+              })),
+            });
+          }
+        } catch {}
+      },
+
+      fetchCollectedPlaylists: async () => {
+        const { user } = get();
+        if (!user?.userId) return;
+        try {
+          const res = await getUserCollectPlaylist({ uid: user.userId, limit: 100 });
+          const data = res?.data?.playlist;
+          if (Array.isArray(data)) {
+            set({
+              collectedPlaylists: data.map((p: any) => ({
+                id: p.id, name: p.name, coverImgUrl: p.coverImgUrl || '',
+                trackCount: p.trackCount || 0, playCount: p.playCount || 0,
+                creator: { nickname: p.creator?.nickname || '' },
+                subscribed: p.subscribed || false,
+              })),
+            });
+          }
+        } catch {}
       },
 
       fetchSubcount: async () => {
@@ -214,6 +274,45 @@ export const useUserStore = create<UserState & UserActions>()(
         }
       },
 
+      fetchAccountInfo: async () => {
+        try {
+          const res = await getUserAccount();
+          if (res?.data) {
+            set({ accountInfo: res.data });
+          }
+        } catch {}
+      },
+
+      fetchSocialStatus: async () => {
+        const { user } = get();
+        if (!user?.userId) return;
+        try {
+          const res = await getUserSocialStatus(user.userId);
+          if (res?.data?.code === 200) {
+            set({ socialStatus: res.data });
+          }
+        } catch {}
+      },
+
+      fetchBindingInfo: async () => {
+        const { user } = get();
+        if (!user?.userId) return;
+        try {
+          const res = await getUserBinding(user.userId);
+          if (res?.data?.code === 200) {
+            set({ bindingInfo: res.data });
+          }
+        } catch {}
+      },
+
+      fetchFollowMixed: async (scene = 0) => {
+        try {
+          const res = await getFollowMixed({ scene, size: 30 });
+          // followMixed is for UI display — store managed in the screen
+          return res?.data;
+        } catch { return null; }
+      },
+
       checkLoginStatus: async () => {
         try {
           const token = await AsyncStorage.getItem(TOKEN_KEY);
@@ -239,10 +338,14 @@ export const useUserStore = create<UserState & UserActions>()(
                 account,
               },
             });
-            // 登录成功后自动拉取统计/等级数据
-            if (get().loginType !== 'uid') {
+            // 登录成功后自动拉取统计/等级/账号/状态数据
+            const lt = get().loginType;
+            if (lt !== 'uid' && lt !== 'guest') {
               get().fetchSubcount();
               get().fetchLevel();
+              get().fetchAccountInfo();
+              get().fetchSocialStatus();
+              get().fetchBindingInfo();
             }
             return true;
           }

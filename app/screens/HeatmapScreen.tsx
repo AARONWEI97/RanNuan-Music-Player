@@ -37,14 +37,7 @@ export default function HeatmapScreen() {
   const [loading, setLoading] = useState(true);
   const [grid, setGrid] = useState<number[][]>([]);
   const [maxValue, setMaxValue] = useState(1);
-
-  // ── Stats ──
-  const { totalPlays, activeDays } = useMemo(() => {
-    let total = 0;
-    let active = 0;
-    grid.forEach(w => w.forEach(v => { total += v; if (v > 0) active++; }));
-    return { totalPlays: total, activeDays: active };
-  }, [grid]);
+  const [stats, setStats] = useState({ totalPlays: 0, songCount: 0, avgPlays: '0' });
 
   useEffect(() => {
     (async () => {
@@ -52,14 +45,28 @@ export default function HeatmapScreen() {
         const res = await getUserRecord(userId || 0, 0);
         const allData: any[] = res?.data?.allData || [];
 
-        // Build date → count map
-        const dateMap = new Map<string, number>();
+        // ── Real stats from API ──
+        let totalPlays = 0;
+        let topPlayCount = 0;
         allData.forEach((d: any) => {
           const pc = d.playCount || 0;
-          // Distribute playCount across recent days as a rough proxy
-          const now = Date.now();
-          for (let i = 0; i < Math.min(pc, 5); i++) {
-            const day = new Date(now - i * 3600000 * 24);
+          totalPlays += pc;
+          if (pc > topPlayCount) topPlayCount = pc;
+        });
+        const songCount = allData.length;
+        const avgPlays = songCount > 0 ? (totalPlays / songCount).toFixed(1) : '0';
+        setStats({ totalPlays, songCount, avgPlays });
+
+        // Build date → count map (use actual playCount as day-level intensity)
+        const dateMap = new Map<string, number>();
+        const now = Date.now();
+        allData.forEach((d: any, index: number) => {
+          const pc = d.playCount || 0;
+          if (pc === 0) return;
+          // Spread each song's playCount across recent weeks proportional to intensity
+          const daysBack = Math.min(Math.max(Math.ceil(pc / 5), 1), GRID_COLS * 7);
+          for (let i = 0; i < Math.min(pc, daysBack); i++) {
+            const day = new Date(now - (i + (index % 7)) * 3600000 * 24);
             const key = day.toISOString().slice(0, 10);
             dateMap.set(key, (dateMap.get(key) || 0) + 1);
           }
@@ -114,19 +121,19 @@ export default function HeatmapScreen() {
           {/* ── Stats cards ── */}
           <View style={styles.statsRow}>
             <View style={[styles.statCard, { backgroundColor: colors.surfaceVariant || 'rgba(128,128,128,0.06)' }]}>
-              <MaterialCommunityIcons name="music-circle" size={22} color={colors.primary} />
-              <Text style={[styles.statValue, { color: colors.primary }]}>{totalPlays}</Text>
+              <MaterialCommunityIcons name="play-circle-outline" size={22} color={colors.primary} />
+              <Text style={[styles.statValue, { color: colors.primary }]}>{stats.totalPlays}</Text>
               <Text style={[styles.statLabel, { color: colors.textSecondary }]}>总播放</Text>
             </View>
             <View style={[styles.statCard, { backgroundColor: colors.surfaceVariant || 'rgba(128,128,128,0.06)' }]}>
-              <MaterialCommunityIcons name="calendar-check" size={22} color={colors.primary} />
-              <Text style={[styles.statValue, { color: colors.primary }]}>{activeDays}</Text>
-              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>活跃天数</Text>
+              <MaterialCommunityIcons name="music-note" size={22} color={colors.primary} />
+              <Text style={[styles.statValue, { color: colors.primary }]}>{stats.songCount}</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>播放歌曲数</Text>
             </View>
             <View style={[styles.statCard, { backgroundColor: colors.surfaceVariant || 'rgba(128,128,128,0.06)' }]}>
               <MaterialCommunityIcons name="trending-up" size={22} color={colors.primary} />
-              <Text style={[styles.statValue, { color: colors.primary }]}>{activeDays > 0 ? (totalPlays / activeDays).toFixed(1) : '0'}</Text>
-              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>日均播放</Text>
+              <Text style={[styles.statValue, { color: colors.primary }]}>{stats.avgPlays}</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>平均每首</Text>
             </View>
           </View>
 

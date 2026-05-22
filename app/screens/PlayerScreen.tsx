@@ -23,6 +23,8 @@ import { useFavorite } from '../hooks/useFavorite';
 import { useLyric } from '../hooks/useLyric';
 import { useDownload } from '../hooks/useDownload';
 import { useSongActionSheet } from '../hooks/useSongActionSheet';
+import { useReparse } from '../hooks/useReparse';
+import SourcePickerModal from '../components/player/SourcePickerModal';
 import { useAppTheme } from '../theme/ThemeContext';
 import { useAlbumColors } from '../hooks/useAlbumColors';
 import { useDownloadStore } from '../store/downloadStore';
@@ -163,7 +165,8 @@ export default function PlayerScreen() {
   const { isFavorite, toggleFavorite } = useFavorite();
   const { lyric, currentLineIndex, isLoading, fontSize, showTranslation } = useLyric();
   const { download, checkDownloaded } = useDownload();
-  const { actionSong, showSheet, actionItems, handlePress: handleSongMore, handleClose: handleSheetClose } = useSongActionSheet();
+  const { reparseSong, reparseVisible, handleOpenReparse, handleCloseReparse, handleSelectSource } = useReparse();
+  const { actionSong, showSheet, actionItems, handlePress: handleSongMore, handleClose: handleSheetClose } = useSongActionSheet({ onReparse: handleOpenReparse });
 
   const [showLyric, setShowLyric] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -599,7 +602,8 @@ export default function PlayerScreen() {
 
       {/* ★ Three-dot menu action sheet */}
       <SongActionSheet visible={showSheet} song={actionSong} actions={actionItems} onClose={handleSheetClose} />
-
+      <SourcePickerModal song={reparseSong} visible={reparseVisible} onClose={handleCloseReparse} onSelectSource={handleSelectSource} />
+      
       {/* ── 歌曲评论弹窗 ── */}
       <Modal visible={showComments} animationType="slide" onRequestClose={() => setShowComments(false)}>
         <View style={[styles.commentModal, { backgroundColor: colors.background }]}>

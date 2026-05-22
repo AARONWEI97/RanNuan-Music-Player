@@ -18,6 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import { useUserStore } from '../store/userStore';
 import { usePlayHistoryStore } from '../store/playHistoryStore';
+import { useDownloadStore } from '../store/downloadStore';
 import { useAppTheme } from '../theme/ThemeContext';
 import { usePlayer } from '../hooks/usePlayer';
 import { Spacing, BorderRadius } from '../theme/spacing';
@@ -30,7 +31,7 @@ import type { SongResult } from '../types';
 import NetworkImage from '../components/common/NetworkImage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const HERO_HEIGHT = 240;
+const HERO_HEIGHT = 300;
 const ALBUM_CARD_SIZE = (SCREEN_WIDTH - 64) / 3;
 
 type PlaylistTab = 'created' | 'collected' | 'album';
@@ -41,16 +42,22 @@ export default function UserScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<RootStackScreenProps<'User'>['navigation']>();
   const user = useUserStore((s) => s.user);
-  const handleLogout = useUserStore((s) => s.handleLogout);
+  const handleLogoutStore = useUserStore((s) => s.handleLogout);
   const playlists = useUserStore((s) => s.playlists);
   const playlistsLoading = useUserStore((s) => s.playlistsLoading);
   const fetchUserPlaylists = useUserStore((s) => s.fetchUserPlaylists);
   const fetchSubcount = useUserStore((s) => s.fetchSubcount);
   const fetchLevel = useUserStore((s) => s.fetchLevel);
+  const fetchAccountInfo = useUserStore((s) => s.fetchAccountInfo);
+  const fetchSocialStatus = useUserStore((s) => s.fetchSocialStatus);
   const subcount = useUserStore((s) => s.subcount);
   const levelData = useUserStore((s) => s.levelData);
+  const accountInfo = useUserStore((s) => s.accountInfo);
+  const socialStatus = useUserStore((s) => s.socialStatus);
   const checkLoginStatus = useUserStore((s) => s.checkLoginStatus);
   const musicHistory = usePlayHistoryStore((s) => s.musicHistory);
+  const downloadTasks = useDownloadStore((s) => s.tasks);
+  const activeDownloadCount = downloadTasks.filter((t) => t.status === 'downloading' || t.status === 'pending').length;
   const { playSong } = usePlayer();
 
   const scrollViewRef = React.useRef<ScrollView>(null);
@@ -77,21 +84,32 @@ export default function UserScreen() {
 
   const loginType = useUserStore((s) => s.loginType);
   const isUidLogin = loginType === 'uid';
+  const canFetchExtendedData = loginType !== 'uid' && loginType !== 'guest';
 
-  // Separate playlists into created and collected
+  // 客户端分离歌单：创建 vs 收藏（依赖 getUserPlaylist 统一接口 + subscribed 字段过滤）
   const createdPlaylists = useMemo(() => {
-    if (!user?.userId) return playlists;
-    return playlists.filter((p) => {
-      const isCreator = p.creator?.nickname === nickname || !p.subscribed;
-      return isCreator;
-    });
-  }, [playlists, user?.userId, nickname]);
+    return playlists.filter((p) => !p.subscribed);
+  }, [playlists]);
 
   const collectedPlaylists = useMemo(() => {
     return playlists.filter((p) => p.subscribed);
   }, [playlists]);
 
   const displayPlaylists = playlistTab === 'created' ? createdPlaylists : playlistTab === 'collected' ? collectedPlaylists : [];
+
+  // Exit with confirmation
+  const handleLogout = useCallback(() => {
+    Alert.alert('退出登录', '确定要退出当前账号吗？', [
+      { text: '取消', style: 'cancel' },
+      { text: '退出', style: 'destructive', onPress: handleLogoutStore },
+    ]);
+  }, [handleLogoutStore]);
+
+  // Navigate to follow list
+  const handleFollowPress = useCallback((type: 'follows' | 'followeds') => {
+    if (!user?.userId) return;
+    navigation.navigate('FollowList' as any, { userId: user.userId, type } as any);
+  }, [navigation, user?.userId]);
 
   // Initial login check
   useEffect(() => {
@@ -102,9 +120,9 @@ export default function UserScreen() {
   useFocusEffect(
     useCallback(() => {
       if (user?.userId) {
-        const handle = InteractionManager.runAfterInteractions(() => {
+        const             handle = InteractionManager.runAfterInteractions(() => {
           fetchUserPlaylists();
-          if (!isUidLogin) {
+          if (canFetchExtendedData) {
             getUserDetail(user.userId).then((res) => {
               const level = res?.data?.level;
               if (level) setUserLevel(level);
@@ -117,11 +135,13 @@ export default function UserScreen() {
             // 拉取统计数量和等级详情
             fetchSubcount();
             fetchLevel();
+            fetchAccountInfo();
+            fetchSocialStatus();
           }
         });
         return () => handle.cancel();
       }
-    }, [user?.userId, isUidLogin, fetchUserPlaylists, fetchSubcount, fetchLevel])
+    }, [user?.userId, canFetchExtendedData, fetchUserPlaylists, fetchSubcount, fetchLevel, fetchAccountInfo, fetchSocialStatus])
   );
 
   // Fetch listening records — ★ 延迟到交互空闲时加载，避免阻塞 UI
@@ -142,19 +162,21 @@ export default function UserScreen() {
 
   // Fetch album list when tab switches to album — ★ 延迟加载
   useEffect(() => {
-    if (playlistTab === 'album' && albumList.length === 0 && user && !isUidLogin) {
+    if (playlistTab === 'album' && albumList.length === 0 && user && canFetchExtendedData) {
       const handle = InteractionManager.runAfterInteractions(() => {
         setAlbumLoading(true);
         getUserAlbumSublist({ limit: 30, offset: 0 }).then((res) => {
           const data = res?.data?.data;
           if (Array.isArray(data)) {
             setAlbumList(data);
+          } else if (Array.isArray(res?.data)) {
+            setAlbumList(res.data);
           }
         }).catch(() => {}).finally(() => setAlbumLoading(false));
       });
       return () => handle.cancel();
     }
-  }, [playlistTab, user, isUidLogin]);
+  }, [playlistTab, user, canFetchExtendedData]);
 
   const handleLogin = useCallback(() => {
     navigation.navigate('Login');
@@ -258,9 +280,20 @@ export default function UserScreen() {
                 </View>
               )}
             </View>
-            {signature ? (
-              <Text style={styles.heroSignature} numberOfLines={1}>{signature}</Text>
-            ) : null}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+              {signature ? (
+                <Text style={styles.heroSignature} numberOfLines={1}>{signature}</Text>
+              ) : null}
+              {!isUidLogin && (
+                <TouchableOpacity
+                  style={styles.editProfileBtn}
+                  onPress={() => navigation.navigate('EditProfile' as any)}
+                >
+                  <MaterialCommunityIcons name="pencil-outline" size={13} color="rgba(255,255,255,0.7)" />
+                  <Text style={styles.editProfileText}>编辑</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
           <TouchableOpacity
             style={styles.settingsButton}
@@ -272,15 +305,15 @@ export default function UserScreen() {
 
         {/* Stats Row */}
         <View style={styles.statsRow}>
-          <View style={styles.statItem}>
+          <TouchableOpacity style={styles.statItem} onPress={() => handleFollowPress('followeds')}>
             <Text style={styles.statValue}>{followeds > 0 ? formatPlayCount(followeds) : '0'}</Text>
             <Text style={styles.statLabel}>粉丝</Text>
-          </View>
+          </TouchableOpacity>
           <View style={styles.statDivider} />
-          <View style={styles.statItem}>
+          <TouchableOpacity style={styles.statItem} onPress={() => handleFollowPress('follows')}>
             <Text style={styles.statValue}>{follows > 0 ? formatPlayCount(follows) : '0'}</Text>
             <Text style={styles.statLabel}>关注</Text>
-          </View>
+          </TouchableOpacity>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
             <Text style={styles.statValue}>
@@ -293,6 +326,25 @@ export default function UserScreen() {
             )}
             <Text style={styles.statLabel}>等级</Text>
           </View>
+          {accountInfo?.profile?.vipType !== undefined && canFetchExtendedData && (
+            <>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <MaterialCommunityIcons
+                  name="crown"
+                  size={14}
+                  color={accountInfo.profile.vipType === 11 ? '#fbbf24' : '#94a3b8'}
+                />
+                <Text style={[styles.statValue, {
+                  color: accountInfo.profile.vipType === 11 ? '#fbbf24' : '#ffffff',
+                  fontSize: 11,
+                }]}>
+                  {accountInfo.profile.vipType === 11 ? '黑胶VIP' : accountInfo.profile.vipType > 0 ? 'VIP' : '普通'}
+                </Text>
+                <Text style={styles.statLabel}>会员</Text>
+              </View>
+            </>
+          )}
           <View style={styles.statDivider} />
           <TouchableOpacity
             style={styles.logoutButton}
@@ -328,6 +380,19 @@ export default function UserScreen() {
             </View>
           </View>
         )}
+
+        {/* Social Status — single row below subcount */}
+        {socialStatus?.data?.content && canFetchExtendedData && (
+          <View style={styles.subcountRow}>
+            <View style={styles.subcountItem}>
+              <MaterialCommunityIcons name="emoticon-outline" size={14} color="#ffffff" />
+              <Text style={styles.subcountValue} numberOfLines={1}>
+                {(socialStatus.data.content || '').slice(0, 8)}
+              </Text>
+              <Text style={styles.subcountLabel}>状态</Text>
+            </View>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -337,6 +402,7 @@ export default function UserScreen() {
     const menuItems = [
       { key: 'favorite', icon: 'heart-outline' as const, label: '我喜欢的音乐', color: '#ef4444' },
       { key: 'recent', icon: 'history' as const, label: '播放历史', color: '#06b6d4' },
+      { key: 'comment', icon: 'comment-text-outline' as const, label: '评论历史', color: '#a855f7' },
       { key: 'local', icon: 'folder-music-outline' as const, label: '本地音乐', color: '#f59e0b' },
       { key: 'heatmap', icon: 'chart-timeline-variant' as const, label: '听歌热力图', color: '#8b5cf6' },
       { key: 'download', icon: 'download-outline' as const, label: '下载管理', color: '#22c55e' },
@@ -362,6 +428,9 @@ export default function UserScreen() {
                   navigation.navigate('Heatmap');
                 } else if (item.key === 'download') {
                   navigation.navigate('Download' as any);
+                } else if (item.key === 'comment') {
+                  if (!user) { navigation.navigate('Login'); return; }
+                  navigation.navigate('CommentHistory' as any);
                 } else if (item.key === 'import') {
                   if (!user) { navigation.navigate('Login'); return; }
                   navigation.navigate('PlaylistImport');
@@ -370,6 +439,11 @@ export default function UserScreen() {
             >
               <View style={[styles.quickMenuIcon, { backgroundColor: `${item.color}18` }]}>
                 <MaterialCommunityIcons name={item.icon} size={22} color={item.color} />
+                {item.key === 'download' && activeDownloadCount > 0 && (
+                  <View style={styles.downloadBadge}>
+                    <Text style={styles.downloadBadgeText}>{activeDownloadCount}</Text>
+                  </View>
+                )}
               </View>
               <Text style={[styles.quickMenuLabel, { color: colors.text }]} numberOfLines={1}>
                 {item.label}
@@ -377,6 +451,10 @@ export default function UserScreen() {
             </TouchableOpacity>
           ))}
         </ScrollView>
+        <View style={styles.swipeHint}>
+          <MaterialCommunityIcons name="gesture-swipe-left" size={13} color={colors.textTertiary} />
+          <Text style={[styles.swipeHintText, { color: colors.textTertiary }]}>左滑查看更多</Text>
+        </View>
       </View>
     );
   };
@@ -456,7 +534,7 @@ export default function UserScreen() {
             <NetworkImage uri={item.picUrl || item.coverImgUrl} style={styles.albumCover} />
             <Text style={[styles.albumName, { color: colors.text }]} numberOfLines={2}>{item.name}</Text>
             <Text style={[styles.albumArtist, { color: colors.textSecondary }]} numberOfLines={1}>
-              {item.artist?.name || item.ar?.name || '未知歌手'}
+              {item.artists?.[0]?.name || item.artist?.name || item.ar?.name || '未知歌手'}
             </Text>
           </TouchableOpacity>
         )}
@@ -711,6 +789,21 @@ function createStyles(colors: any) {
       color: 'rgba(255,255,255,0.8)',
       fontSize: 9,
     },
+    editProfileBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginLeft: 10,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 10,
+      backgroundColor: 'rgba(255,255,255,0.12)',
+    },
+    editProfileText: {
+      ...Typography.overline,
+      color: 'rgba(255,255,255,0.7)',
+      marginLeft: 3,
+      fontSize: 10,
+    },
     settingsButton: {
       width: 36,
       height: 36,
@@ -760,7 +853,7 @@ function createStyles(colors: any) {
     levelProgressBar: {
       width: 40,
       height: 3,
-      backgroundColor: 'rgba(255,255,255,0.2)',
+      backgroundColor: 'rgba(255,255,255,0.6)',
       borderRadius: 2,
       marginTop: 3,
       overflow: 'hidden',
@@ -883,6 +976,38 @@ function createStyles(colors: any) {
     quickMenuLabel: {
       ...Typography.caption,
       textAlign: 'center',
+    },
+    swipeHint: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      alignItems: 'center',
+      marginTop: Spacing.xs,
+      paddingRight: Spacing.xs,
+      gap: 3,
+    },
+    swipeHintText: {
+      ...Typography.overline,
+      fontSize: 10,
+    },
+    downloadBadge: {
+      position: 'absolute',
+      top: -4,
+      right: -4,
+      minWidth: 16,
+      height: 16,
+      borderRadius: 8,
+      backgroundColor: '#ef4444',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 4,
+      borderWidth: 1.5,
+      borderColor: '#ffffff',
+    },
+    downloadBadgeText: {
+      fontSize: 10,
+      fontWeight: '700',
+      color: '#ffffff',
+      lineHeight: 13,
     },
 
     // ─── Tab Bar ───

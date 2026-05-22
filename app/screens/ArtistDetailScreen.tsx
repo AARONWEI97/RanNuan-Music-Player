@@ -18,6 +18,8 @@ import NetworkImage from '../components/common/NetworkImage';
 import SongActionSheet from '../components/music/SongActionSheet';
 import CommentList from '../components/comment/CommentList';
 import { useSongActionSheet } from '../hooks/useSongActionSheet';
+import { useReparse } from '../hooks/useReparse';
+import SourcePickerModal from '../components/player/SourcePickerModal';
 import { usePlayer } from '../hooks/usePlayer';
 import { usePlaylist } from '../hooks/usePlaylist';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -281,7 +283,8 @@ export default function ArtistDetailScreen({ route, navigation }: RootStackScree
     playSong(song);
   }, [activeTab, hotSongs, allSongs, playAll, playSong]);
 
-  const { actionSong, showSheet, actionItems, handlePress: handleSongMore, handleClose, commentSongId, showComments, setShowComments } = useSongActionSheet();
+  const { reparseSong, reparseVisible, handleOpenReparse, handleCloseReparse, handleSelectSource } = useReparse();
+  const { actionSong, showSheet, actionItems, handlePress: handleSongMore, handleClose, commentSongId, showComments, setShowComments } = useSongActionSheet({ onReparse: handleOpenReparse });
 
   const coverUrl = artist?.cover || artist?.avatar;
 
@@ -567,6 +570,7 @@ export default function ArtistDetailScreen({ route, navigation }: RootStackScree
       </ScrollView>
 
       <SongActionSheet visible={showSheet} song={actionSong} actions={actionItems} onClose={handleClose} />
+      <SourcePickerModal song={reparseSong} visible={reparseVisible} onClose={handleCloseReparse} onSelectSource={handleSelectSource} />
       <Modal visible={showComments} animationType="slide" onRequestClose={() => setShowComments(false)}>
         <View style={[styles.commentModal, { backgroundColor: colors.background, paddingTop: insets.top }]}>
           <View style={styles.commentHeader}>

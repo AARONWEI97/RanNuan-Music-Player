@@ -57,3 +57,53 @@ export const getUserCommentHistory = (params: {
 export const getEventComment = (params: {
   threadId: string; limit?: number; offset?: number;
 }) => request.get('/comment/event', { params });
+
+// ========== Phase 11.7 评论增强 ==========
+
+// ── 新版评论接口（分页+排序：推荐/热度/时间）──
+export const getNewComment = (params: {
+  id: number;
+  type: number;
+  pageNo?: number;
+  pageSize?: number;
+  sortType?: 2 | 3 | 99; // 2=热度 3=时间 99=推荐
+  cursor?: string;
+}) => request.get('/comment/new', { params });
+
+// ── 视频评论 ──
+export const getVideoComment = (params: {
+  id: number; limit?: number; offset?: number; before?: number;
+}) => request.get('/comment/video', { params });
+
+// ── 电台节目评论 ──
+export const getDjComment = (params: {
+  id: number; limit?: number; offset?: number; before?: number;
+}) => request.get('/comment/dj', { params });
+
+// ── 批量评论统计 ──
+export const getCommentInfoList = (type: number, ids: number[]) =>
+  request.get('/comment/info/list', { params: { type, ids: ids.join(',') } });
+
+// ── 举报评论 ──
+export const reportComment = (params: {
+  id: number;       // 资源id
+  cid: number;      // 评论id
+  reason: string;   // 举报原因
+  type: number;     // 资源类型
+}) => request.post('/comment/report', params);
+
+// ── 抱一抱评论 ──
+export const hugComment = (params: {
+  uid: number;
+  cid: number;
+  sid: number;
+}) => request.post('/hug/comment', params);
+
+// ── 抱一抱列表 ──
+export const getCommentHugList = (params: {
+  uid: number;
+  cid: number;
+  sid: number;
+  limit?: number;
+  offset?: number;
+}) => request.get('/comment/hug/list', { params });

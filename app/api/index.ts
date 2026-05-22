@@ -19,6 +19,8 @@ export {
 
 export {
   fmTrash,
+  setFmMode,
+  getRecommendResource,
   getMusicQualityDetail,
   getMusicUrl,
   getMusicDetail,
@@ -37,6 +39,18 @@ export {
   getHistoryRecommendDates,
   getHistoryRecommendSongs,
   getIntelligenceList,
+  getPlaylistTrackAll,
+  getSongWiki,
+  getSongCreators,
+  getSongDynamicCover,
+  getSongChorus,
+  getSongCopyrightRcmd,
+  getSongRedCount,
+  checkSongLike,
+  getSongDownloadUrl,
+  matchSongUrl,
+  getSheetList,
+  getSheetPreview,
 } from './music';
 
 export {
@@ -94,11 +108,25 @@ export {
   getPurchasedAlbumList,
   getPurchasedSongs,
   getArtistNewMv,
+  uploadAvatar,
 } from './user';
 
 export {
   importPlaylist,
   getImportTaskStatus,
+  deletePlaylist,
+  updatePlaylistName,
+  updatePlaylistDesc,
+  updatePlaylistTags,
+  updatePlaylistCover,
+  updatePlaylist,
+  getHotPlaylistCategories,
+  getHighqualityTags,
+  updatePlaylistOrder,
+  getPlaylistSubscribers,
+  getPlaylistDetailDynamic,
+  updatePlaylistPlaycount,
+  getPlaylistRcmd,
 } from './playlist';
 
 export {
@@ -135,6 +163,13 @@ export {
   getHotwallComment,
   getUserCommentHistory,
   getEventComment,
+  getNewComment,
+  getVideoComment,
+  getDjComment,
+  getCommentInfoList,
+  reportComment,
+  hugComment,
+  getCommentHugList,
 } from './comment';
 
 export {
@@ -145,6 +180,14 @@ export {
 } from './mv';
 
 export {
+  getSimiSong,
+  getSimiPlaylist,
+  getSimiMv,
+  getSimiArtist,
+  getSimiUser,
+} from './simi';
+
+export {
   getListByTag,
   getListByCat,
   getRecommendList,
@@ -152,3 +195,38 @@ export {
   getAlbum as getAlbumList,
   getToplist,
 } from './list';
+
+export {
+  getStyleList,
+  getStylePreference,
+  getStyleDetail,
+  getStyleSong,
+  getStyleAlbum,
+  getStylePlaylist,
+  getStyleArtist,
+} from './style';
+
+export {
+  searchVoiceList,
+  getVoiceList,
+  searchVoiceInList,
+  getVoiceDetail,
+  updateVoiceOrder,
+  getVoiceListDetail,
+  deleteVoice,
+  uploadVoice,
+  getVoiceLyric,
+  getMyCreatedVoiceList,
+} from './voice';
+
+export {
+  getFirstListenInfo,
+  getAnnualSummary,
+  getMusicCalendar,
+  getAidjContentRcmd,
+  getRadioSport,
+  matchAudio,
+  getTopArtists,
+  getToplistArtist,
+  checkMusic,
+} from './advanced';

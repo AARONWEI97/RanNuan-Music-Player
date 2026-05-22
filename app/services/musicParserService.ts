@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import type { SongResult } from '../types';
 import request, { TOKEN_KEY } from '../api/request';
+import { SourceConfigManager } from './SongSourceConfigManager';
 
 const URL_CACHE_PREFIX = 'music_url_cache_';
 const URL_CACHE_EXPIRY = 30 * 60 * 1000;
@@ -154,6 +155,27 @@ class UnblockApiMatchStrategy implements MusicSourceStrategy {
     }
 
     console.log(`[MusicParser] UnblockApiMatch: all sources failed for "${songData.name}"`);
+    return null;
+  }
+
+  /** 用指定单个 source 强制解析 */
+  async parseWithSource(
+    id: string | number,
+    songData: SongResult,
+    quality: string,
+    forcedSource: string,
+  ): Promise<string | null> {
+    try {
+      const params: Record<string, any> = { id, source: forcedSource };
+      const res = await request.get('/song/url/match', { params });
+      const url = res?.data?.data?.url;
+      if (url) {
+        console.log(`[MusicParser] UnblockApiMatch (${forcedSource}) found URL for "${songData.name}"`);
+        return url;
+      }
+    } catch (e) {
+      console.warn(`[MusicParser] UnblockApiMatch (${forcedSource}) error:`, e instanceof Error ? e.message : String(e));
+    }
     return null;
   }
 }
@@ -493,6 +515,59 @@ export class MusicParser {
       await AsyncStorage.removeItem(`${URL_CACHE_PREFIX}${id}`);
       console.log(`[MusicParser] 已清除歌曲 id=${id} 的缓存 URL`);
     } catch {}
+  }
+
+  /** 用指定音源强制重新解析 */
+  async parseMusicWithSource(
+    id: string | number,
+    songData: SongResult,
+    quality: string,
+    forcedSource: string,
+  ): Promise<string | null> {
+    // 1. 清除缓存
+    await this.invalidateCache(id);
+    // 2. 清除失败标记
+    failedCacheMap.clear();
+    SourceConfigManager.clearTriedSources(id);
+
+    console.log(`[MusicParser] Forced reparse with source "${forcedSource}" for "${songData.name}"`);
+
+    // 3. 映射到策略
+    const unblockSources = ['bodian', 'qq', 'migu', 'kugou', 'kuwo', 'pyncmd'];
+    const strategyMap: Record<string, { strategy: MusicSourceStrategy; extraParam?: string }> = {
+      gdmusic: { strategy: this.strategies.find((s) => s.name === 'gdmusic')! },
+    };
+    // 所有 unblock 源用同一个策略
+    for (const src of unblockSources) {
+      strategyMap[src] = { strategy: this.strategies.find((s) => s.name === 'unblockMatch')!, extraParam: src };
+    }
+
+    const entry = strategyMap[forcedSource];
+    if (!entry || !entry.strategy) {
+      console.warn(`[MusicParser] Unknown forced source: ${forcedSource}, falling back to normal parse`);
+      return this.parseMusic(id, songData, quality, true);
+    }
+
+    try {
+      // 对 unblock 源，直接调用 parseWithSource
+      if (entry.extraParam) {
+        const url = await (entry.strategy as UnblockApiMatchStrategy).parseWithSource(id, songData, quality, entry.extraParam);
+        if (url) {
+          await this.cacheUrl(id, url, false);
+          return url;
+        }
+      } else {
+        const url = await entry.strategy.parse(id, songData, quality);
+        if (url) {
+          await this.cacheUrl(id, url, false);
+          return url;
+        }
+      }
+    } catch (e) {
+      console.warn(`[MusicParser] Forced source "${forcedSource}" failed:`, e);
+    }
+
+    return null;
   }
 
   setStrategyEnabled(name: string, enabled: boolean): void {

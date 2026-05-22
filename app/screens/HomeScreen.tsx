@@ -319,12 +319,7 @@ export default function HomeScreen() {
             navigation.navigate('Login');
             return;
           }
-          if (dailyRecommendSongs.length > 0) {
-            playAll(dailyRecommendSongs, 0);
-            playSong(dailyRecommendSongs[0]);
-          } else {
-            Alert.alert('提示', '获取每日推荐失败，请检查登录状态后重试');
-          }
+          navigation.navigate('DailyRecommend');
         },
       },
       {
@@ -381,7 +376,7 @@ export default function HomeScreen() {
         icon: 'playlist-music' as const,
         label: '歌单广场',
         coverUrl: hotSingers[0]?.picUrl || '',
-        onPress: () => navigateToSearch('歌单'),
+        onPress: () => navigation.navigate('PlaylistSquare'),
       },
     ],
     [recommendSongs, navigation, dailyRecommendCover, dailyRecommendSongs, personalFMCover, toplistCover, mvCover, hotSingers, user, playAll, playSong, navigateToSearch]
@@ -511,7 +506,7 @@ export default function HomeScreen() {
                 <View style={[styles.sectionDot, { backgroundColor: colors.primary }]} />
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>推荐歌单</Text>
               </View>
-              <TouchableOpacity style={styles.moreBtn} onPress={() => navigation.navigate('Search')}>
+              <TouchableOpacity style={styles.moreBtn} onPress={() => navigation.navigate('PlaylistSquare')}>
                 <Text style={[styles.moreText, { color: colors.textSecondary }]}>更多</Text>
                 <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />
               </TouchableOpacity>

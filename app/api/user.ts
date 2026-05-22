@@ -352,3 +352,26 @@ export const getRecentDj = (limit: number = 100) => {
     params: { limit }
   });
 };
+
+// ─── 头像上传 ───
+export const uploadAvatar = (uri: string, imgSize?: number) => {
+  const formData = new FormData();
+  const fileName = uri.split('/').pop() || 'avatar.jpg';
+  const fileType = fileName.endsWith('.png') ? 'image/png' : 'image/jpeg';
+  formData.append('imgFile', {
+    uri,
+    name: fileName,
+    type: fileType,
+  } as any);
+  if (imgSize) formData.append('imgSize', String(imgSize));
+
+  return request({
+    url: '/avatar/upload',
+    method: 'post',
+    data: formData,
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+    timeout: 30000,
+  });
+};

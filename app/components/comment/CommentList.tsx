@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAppTheme } from '../../theme/ThemeContext';
 import { Spacing, BorderRadius } from '../../theme/spacing';
-import { getMusicComment, getHotComment, getFloorComment, sendComment, likeComment } from '../../api/comment';
+import { getHotComment, getFloorComment, getNewComment, sendComment, likeComment, reportComment, hugComment, getCommentHugList } from '../../api/comment';
 import { useUserStore } from '../../store/userStore';
 import { showToast } from '../ui/Toast';
 
@@ -49,39 +49,59 @@ export default function CommentList({ songId, playlistId, albumId, mvId, type }:
   const [floorReplies, setFloorReplies] = useState<CommentData[]>([]);
   const [floorLoading, setFloorLoading] = useState(false);
 
+  // ── Hug list ──
+  const [hugListId, setHugListId] = useState<number | null>(null);
+  const [hugListData, setHugListData] = useState<{ userId: number; nickname: string; avatarUrl: string }[]>([]);
+  const [hugListLoading, setHugListLoading] = useState(false);
+
   // ── Comment input ──
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
   const [replyTo, setReplyTo] = useState<{ cid: number; name: string } | null>(null);
 
   // Pagination state
-  const offsetRef = useRef(0);
-  const lastTimeRef = useRef<number | undefined>(undefined);
+  const pageNoRef = useRef(1);
 
   const fetchComments = useCallback(async (isLoadMore = false, currentTab = tab) => {
     if (!id) { setLoading(false); return; }
     if (isLoadMore && (!hasMore || loadingMore)) return;
 
-    if (isLoadMore) setLoadingMore(true); else { setLoading(true); offsetRef.current = 0; lastTimeRef.current = undefined; }
+    if (isLoadMore) setLoadingMore(true); else { setLoading(true); pageNoRef.current = 1; }
 
     try {
       let res;
       if (currentTab === 'hot') {
-        res = await getHotComment({ id, type: commentType, limit: PAGE_SIZE, offset: isLoadMore ? offsetRef.current : 0 });
+        res = await getHotComment({ id, type: commentType, limit: PAGE_SIZE, offset: isLoadMore ? (pageNoRef.current - 1) * PAGE_SIZE : 0 });
+        if (isLoadMore) pageNoRef.current += 1;
       } else {
-        res = await getMusicComment({ id, limit: PAGE_SIZE, offset: isLoadMore ? 0 : 0, before: isLoadMore ? lastTimeRef.current : undefined });
+        // 新版评论接口 — 支持分页+排序
+        res = await getNewComment({
+          id, type: commentType,
+          pageNo: isLoadMore ? pageNoRef.current : 1,
+          pageSize: PAGE_SIZE,
+          sortType: 3, // 3=按时间排序
+        });
+        if (isLoadMore) pageNoRef.current += 1;
       }
 
-      const newComments: CommentData[] = res?.data?.comments || (currentTab === 'hot' ? res?.data?.hotComments : []) || [];
-      const resTotal = res?.data?.total || 0;
+      // 热评返回 hotComments，最新和 getNewComment 返回 comments
+      const newComments: CommentData[] = currentTab === 'hot'
+        ? (res?.data?.data?.hotComments || res?.data?.hotComments || [])
+        : (res?.data?.data?.comments || res?.data?.comments || []);
+      const resTotal = currentTab === 'hot'
+        ? (res?.data?.total || res?.data?.data?.total || 0)
+        : (res?.data?.total || res?.data?.data?.total || 0);
+      // hasMore：API 字段优先，否则按返回数量判断，0 条时强制 false
+      const hasMoreApi = res?.data?.hasMore ?? res?.data?.data?.hasMore;
+      const hasMoreRes = hasMoreApi !== undefined && hasMoreApi !== null
+        ? hasMoreApi && newComments.length === PAGE_SIZE
+        : newComments.length === PAGE_SIZE;
 
       setComments(prev => isLoadMore ? [...prev, ...newComments] : newComments);
-      setTotal(resTotal);
-      offsetRef.current += PAGE_SIZE;
-      if (newComments.length > 0) lastTimeRef.current = newComments[newComments.length - 1]?.time;
-      setHasMore(comments.length + newComments.length < resTotal);
+      setTotal(resTotal || (isLoadMore ? total : newComments.length));
+      setHasMore(hasMoreRes);
     } catch {} finally { setLoading(false); setLoadingMore(false); }
-  }, [id, commentType, hasMore, loadingMore, tab]);
+  }, [id, commentType, hasMore, loadingMore, tab, total]);
 
   useEffect(() => { fetchComments(false, tab); }, [id, tab]);
 
@@ -94,6 +114,43 @@ export default function CommentList({ songId, playlistId, albumId, mvId, type }:
       setComments(prev => prev.map(c => c.commentId === cid ? { ...c, liked: !c.liked, likedCount: c.liked ? c.likedCount - 1 : c.likedCount + 1 } : c));
     } catch { showToast({ title: '操作失败', type: 'error' }); }
     setSubmittingLike(prev => { const s = new Set(prev); s.delete(cid); return s; });
+  };
+
+  const handleHug = async (uid: number, cid: number, sid: number) => {
+    try {
+      await hugComment({ uid, cid, sid });
+      showToast({ title: '已发送抱抱', type: 'success' });
+    } catch { showToast({ title: '操作失败', type: 'error' }); }
+  };
+
+  const toggleHugList = async (uid: number, cid: number, sid: number) => {
+    if (hugListId === cid) { setHugListId(null); setHugListData([]); return; }
+    setHugListId(cid);
+    setHugListLoading(true);
+    try {
+      const res = await getCommentHugList({ uid, cid, sid, limit: 20 });
+      setHugListData(res?.data?.data || res?.data || []);
+    } catch {}
+    setHugListLoading(false);
+  };
+
+  // ── Report ──
+  const handleReport = (cid: number) => {
+    Alert.alert('举报评论', '确定举报该评论？', [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '违规内容', onPress: async () => {
+          try { await reportComment({ id, cid, reason: '违规内容', type: commentType }); showToast({ title: '已举报', type: 'success' }); }
+          catch { showToast({ title: '操作失败', type: 'error' }); }
+        }
+      },
+      {
+        text: '垃圾广告', onPress: async () => {
+          try { await reportComment({ id, cid, reason: '垃圾广告', type: commentType }); showToast({ title: '已举报', type: 'success' }); }
+          catch { showToast({ title: '操作失败', type: 'error' }); }
+        }
+      },
+    ]);
   };
 
   // ── Floor replies ──
@@ -135,7 +192,12 @@ export default function CommentList({ songId, playlistId, albumId, mvId, type }:
   };
 
   const renderComment = (c: CommentData, isReply = false, _parentId?: number) => (
-    <View key={c.commentId} style={[styles.item, isReply && styles.replyItem]}>
+    <TouchableOpacity
+      key={c.commentId}
+      activeOpacity={0.9}
+      onLongPress={() => handleReport(c.commentId)}
+      style={[styles.item, isReply && styles.replyItem]}
+    >
       <View style={styles.avatar}>
         {c.user.avatarUrl ? (
           <Image source={{ uri: c.user.avatarUrl }} style={[styles.avatarImg, isReply && styles.avatarImgSmall]} />
@@ -157,6 +219,12 @@ export default function CommentList({ songId, playlistId, albumId, mvId, type }:
             <MaterialCommunityIcons name={c.liked ? 'thumb-up' : 'thumb-up-outline'} size={14} color={c.liked ? colors.primary : colors.textSecondary} />
           </TouchableOpacity>
           <Text style={[styles.likeCount, { color: colors.textSecondary }]}>{c.likedCount || ''}</Text>
+          <TouchableOpacity onPress={() => handleHug(useUserStore.getState().user?.userId || 0, c.commentId, id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <MaterialCommunityIcons name="hand-heart" size={14} color={colors.textSecondary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => toggleHugList(c.user.userId, c.commentId, id)} style={styles.replyBtn}>
+            <Text style={[styles.floorLabel, { color: hugListId === c.commentId ? colors.primary : colors.textSecondary }]}>抱抱</Text>
+          </TouchableOpacity>
           <TouchableOpacity onPress={() => { setReplyTo({ cid: c.commentId, name: c.user.nickname }); }} style={styles.replyBtn}>
             <MaterialCommunityIcons name="reply" size={14} color={colors.textSecondary} />
           </TouchableOpacity>
@@ -176,8 +244,25 @@ export default function CommentList({ songId, playlistId, albumId, mvId, type }:
             ) : floorReplies.map(r => renderComment(r, true, c.commentId))}
           </View>
         )}
+        {/* Hug list */}
+        {!isReply && hugListId === c.commentId && (
+          <View style={[styles.floorWrap, { backgroundColor: colors.surfaceVariant || 'rgba(128,128,128,0.05)' }]}>
+            {hugListLoading ? <ActivityIndicator size="small" color={colors.primary} /> : hugListData.length === 0 ? (
+              <Text style={[styles.empty, { color: colors.textSecondary }]}>暂无抱抱</Text>
+            ) : hugListData.map((u, i) => (
+              <View key={i} style={styles.hugItem}>
+                {u.avatarUrl ? (
+                  <Image source={{ uri: u.avatarUrl }} style={styles.hugAvatar} />
+                ) : (
+                  <MaterialCommunityIcons name="account-circle" size={22} color={colors.textSecondary} />
+                )}
+                <Text style={[styles.hugName, { color: colors.text }]}>{u.nickname}</Text>
+              </View>
+            ))}
+          </View>
+        )}
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   if (loading) {
@@ -260,11 +345,14 @@ const styles = StyleSheet.create({
   time: { fontSize: 11 },
   replyQuote: { fontSize: 12, borderRadius: BorderRadius.sm, paddingHorizontal: 6, paddingVertical: 2, marginBottom: 4, overflow: 'hidden' },
   content: { fontSize: 14, lineHeight: 20 },
-  likeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
+  likeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6, flexWrap: 'wrap' },
   likeCount: { fontSize: 11 },
   replyBtn: { marginLeft: 12 },
   floorLabel: { fontSize: 12, fontWeight: '500' },
   floorWrap: { marginTop: 8, padding: Spacing.md, borderRadius: BorderRadius.md },
+  hugItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
+  hugAvatar: { width: 22, height: 22, borderRadius: 11 },
+  hugName: { fontSize: 13 },
   inputBar: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(128,128,128,0.15)', paddingHorizontal: Spacing.md, paddingTop: Spacing.sm },
   replyHint: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
   replyHintText: { fontSize: 13 },

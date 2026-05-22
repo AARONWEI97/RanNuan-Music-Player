@@ -54,3 +54,40 @@ export function updatePlaylistCover(params: { id: number; imgFile: any }) {
 export function updatePlaylist(params: { id: number; name: string; desc?: string; tags?: string }) {
   return request.get('/playlist/update', { params });
 }
+
+// ─── Phase 11.3 新增 ───
+
+/** 热门歌单分类 */
+export function getHotPlaylistCategories() {
+  return request.get('/playlist/hot');
+}
+
+/** 精品歌单标签列表 */
+export function getHighqualityTags() {
+  return request.get('/playlist/highquality/tags');
+}
+
+/** 调整歌单歌曲顺序 */
+export function updatePlaylistOrder(params: { pid: number; ids: number[] }) {
+  return request.post('/playlist/order/update', { params });
+}
+
+/** 歌单收藏者列表 */
+export function getPlaylistSubscribers(params: { id: number; limit?: number; offset?: number }) {
+  return request.get('/playlist/subscribers', { params });
+}
+
+/** 歌单详情动态（评论数/收藏数/播放数） */
+export function getPlaylistDetailDynamic(id: number) {
+  return request.get('/playlist/detail/dynamic', { params: { id } });
+}
+
+/** 更新歌单播放量 */
+export function updatePlaylistPlaycount(id: number) {
+  return request.post('/playlist/update/playcount', { params: { id } });
+}
+
+/** 相关歌单推荐 */
+export function getPlaylistRcmd(id: number) {
+  return request.get('/playlist/detail/rcmd/get', { params: { id } });
+}

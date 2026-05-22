@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { setApiBaseUrl } from '../api/request';
+
+const DEFAULT_API_URL = 'http://139.9.223.233:3000';
 
 type ThemeType = 'light' | 'dark' | 'system' | 'dog-light' | 'dog-dark';
 
@@ -40,7 +43,7 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
     (set) => ({
       theme: 'dog-light',
       language: 'zh-CN',
-      apiBaseUrl: '',
+      apiBaseUrl: DEFAULT_API_URL,
       musicQuality: 'higher',
       showLyricTranslation: false,
       autoPlay: false,
@@ -63,7 +66,12 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
       setUnblockServiceUrl: (url) => set({ unblockServiceUrl: url }),
       setLxMusicApiUrl: (url) => set({ lxMusicApiUrl: url }),
       setEnableMusicParsing: (enable) => set({ enableMusicParsing: enable }),
-      initializeSettings: () => {},
+      initializeSettings: () => {
+        const { apiBaseUrl } = get();
+        if (apiBaseUrl) {
+          setApiBaseUrl(apiBaseUrl);
+        }
+      },
     }),
     {
       name: 'settings-store',

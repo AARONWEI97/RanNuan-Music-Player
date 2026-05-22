@@ -4,6 +4,7 @@ import { useDownloadStore } from '../store/downloadStore';
 import { getMusicUrl } from '../api/music';
 import { parseMusicUrl } from './musicParserService';
 import { useSettingsStore } from '../store/settingsStore';
+import { showDownloadSuccess, showDownloadError } from '../components/ui/Toast';
 import type { SongResult } from '../types';
 
 const MUSIC_DIR = `${FileSystem.documentDirectory}music/`;
@@ -52,6 +53,7 @@ export async function downloadSong(song: SongResult): Promise<void> {
 
     if (!url) {
       store.updateTaskStatus(song.id, 'failed');
+      showDownloadError(song.name);
       return;
     }
 
@@ -77,12 +79,15 @@ export async function downloadSong(song: SongResult): Promise<void> {
         result.uri,
         fileInfo.exists ? (fileInfo as any).size : undefined
       );
+      showDownloadSuccess(song.name);
     } else {
       store.updateTaskStatus(song.id, 'failed');
+      showDownloadError(song.name);
     }
   } catch (e) {
     console.warn(`[DownloadService] Failed to download "${song.name}":`, e);
     store.updateTaskStatus(song.id, 'failed');
+    showDownloadError(song.name);
   }
 }
 

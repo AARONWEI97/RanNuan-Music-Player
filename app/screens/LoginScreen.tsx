@@ -704,6 +704,16 @@ export default function LoginScreen() {
               ))}
             </View>
 
+            {/* 460 风险提示 — 手机号/邮箱登录容易触发风控 */}
+            {(activeMethod === 'phone' || activeMethod === 'email') && (
+              <View style={styles.warningBanner}>
+                <MaterialCommunityIcons name="alert-circle-outline" size={15} color="#fbbf24" />
+                <Text style={styles.warningText}>
+                  手机/邮箱登录易触发网易风控（460），建议优先使用扫码或 Cookie 登录
+                </Text>
+              </View>
+            )}
+
             {/* Method Content */}
             {activeMethod === 'qr' && renderQrLogin()}
             {activeMethod === 'phone' && renderPhoneLogin()}
@@ -805,6 +815,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.lg,
+  },
+  warningBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    backgroundColor: 'rgba(251,191,36,0.12)',
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(251,191,36,0.3)',
+    gap: 6,
+  },
+  warningText: {
+    flex: 1,
+    ...Typography.caption,
+    color: '#fbbf24',
+    lineHeight: 17,
   },
   methodTabActive: {
     backgroundColor: 'rgba(255,255,255,0.9)',

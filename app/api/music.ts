@@ -84,6 +84,16 @@ export const likeSong = (id: number, like: boolean = true) => {
   return request.get('/like', { params: { id, like } });
 };
 
+export const setFmMode = (mode: string, subMode?: string) => {
+  return request.get('/personal/fm/mode', {
+    params: { mode, ...(subMode ? { submode: subMode } : {}) }
+  });
+};
+
+export const getRecommendResource = () => {
+  return request.get('/recommend/resource');
+};
+
 export const dislikeRecommendedSong = (id: number | string) => {
   return request.get('/recommend/songs/dislike', {
     params: { id }
@@ -168,6 +178,14 @@ export function getHistoryRecommendSongs(date: string) {
   });
 }
 
+export function getPlaylistTrackAll(params: { id: number; limit?: number; offset?: number }) {
+  return request({
+    url: '/playlist/track/all',
+    method: 'get',
+    params: { id: params.id, limit: params.limit || 9999, offset: params.offset || 0 }
+  });
+}
+
 export function getIntelligenceList(params: { id: number; pid: number; sid?: number }) {
   return request({
     url: '/playmode/intelligence/list',
@@ -175,3 +193,64 @@ export function getIntelligenceList(params: { id: number; pid: number; sid?: num
     params
   });
 }
+
+// ========== Phase 11.14 歌曲增强 API ==========
+
+/** 歌曲音乐百科简要信息 */
+export const getSongWiki = (id: number) => {
+  return request.get('/song/wiki/summary', { params: { id } });
+};
+
+/** 歌曲创作者信息 */
+export const getSongCreators = (id: number) => {
+  return request.get('/song/creators', { params: { id } });
+};
+
+/** 歌曲动态封面 */
+export const getSongDynamicCover = (id: number) => {
+  return request.get('/song/dynamic/cover', { params: { id } });
+};
+
+/** 副歌起始时间 */
+export const getSongChorus = (id: number) => {
+  return request.get('/song/chorus', { params: { id } });
+};
+
+/** 灰色歌曲可播放版本推荐 */
+export const getSongCopyrightRcmd = (songid: number) => {
+  return request.get('/song/copyright/rcmd', { params: { songid } });
+};
+
+/** 歌曲红心数量 */
+export const getSongRedCount = (id: number) => {
+  return request.get('/song/red/count', { params: { id } });
+};
+
+/** 批量判断歌曲是否喜爱 */
+export const checkSongLike = (ids: number[]) => {
+  return request.get('/song/like/check', { params: { ids: ids.join(',') } });
+};
+
+/** 客户端下载新版（独立导出，非VIP获取高音质下载） */
+export const getSongDownloadUrl = (id: number, level?: string, encodeType?: string) => {
+  return request.get('/song/download/url/v1', {
+    params: { id, level, encodeType }
+  });
+};
+
+/** 灰歌解灰 — 直接获取灰色歌曲链接 */
+export const matchSongUrl = (id: number, source?: string) => {
+  return request.get('/song/url/match', {
+    params: { id, source }
+  });
+};
+
+/** 歌曲乐谱列表 */
+export const getSheetList = (id: number) => {
+  return request.get('/sheet/list', { params: { id } });
+};
+
+/** 乐谱详情预览 */
+export const getSheetPreview = (id: number) => {
+  return request.get('/sheet/preview', { params: { id } });
+};

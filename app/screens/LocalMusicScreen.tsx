@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, PermissionsAndroid, Platform } from 'react-native';
+import {
+  View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator,
+  Alert, Platform, Linking,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as MediaLibrary from 'expo-media-library';
-import * as FileSystem from 'expo-file-system';
 
 import { usePlayer } from '../hooks/usePlayer';
 import { usePlaylist } from '../hooks/usePlaylist';
@@ -30,33 +32,57 @@ export default function LocalMusicScreen() {
   const [loading, setLoading] = useState(true);
   const [audios, setAudios] = useState<LocalAudio[]>([]);
 
-  const requestPermission = async () => {
-    if (Platform.OS === 'android') {
-      const perm = await PermissionsAndroid.request('android.permission.READ_MEDIA_AUDIO' as any);
-      return perm === 'granted';
-    }
-    const { status } = await MediaLibrary.requestPermissionsAsync();
-    return status === 'granted';
-  };
-
   const scanLocal = useCallback(async () => {
     setLoading(true);
     try {
-      const granted = await requestPermission();
-      if (!granted) { Alert.alert('权限不足', '请在设置中允许访问媒体库'); setLoading(false); return; }
+      // 1. 请求权限
+      let permResult: MediaLibrary.PermissionResponse;
+      try {
+        permResult = await MediaLibrary.requestPermissionsAsync();
+      } catch {
+        // "不再询问" 模式下可能直接抛异常
+        permResult = { status: 'denied', granted: false, canAskAgain: false, expires: 'never' };
+      }
 
+      if (!permResult.granted) {
+        Alert.alert(
+          '需要媒体访问权限',
+          '请在系统设置中允许媒体访问权限\n\n如果看不到相关选项，请先运行 npx expo run:android 重建 APK',
+          [
+            { text: '取消', style: 'cancel' },
+            { text: '去设置', onPress: () => Linking.openSettings() },
+          ],
+        );
+        setLoading(false);
+        return;
+      }
+
+      // 2. 扫描系统媒体库
       const { assets } = await MediaLibrary.getAssetsAsync({
-        mediaType: 'audio', first: 100,
+        mediaType: 'audio', first: 500,
       });
-      const items: LocalAudio[] = assets.map((a) => ({
-        id: a.id,
-        name: a.filename.replace(/\.[^.]+$/, '') || '未知',
-        artist: '本地音乐',
-        uri: a.uri,
-        duration: a.duration,
-      }));
-      setAudios(items);
-    } catch (e) { Alert.alert('扫描失败', '无法读取本地音乐文件'); }
+
+      if (assets.length > 0) {
+        setAudios(assets.map((a) => ({
+          id: a.id,
+          name: a.filename.replace(/\.[^.]+$/, '') || '未知',
+          artist: '本地音乐',
+          uri: a.uri,
+          duration: a.duration,
+        })));
+      } else {
+        setAudios([]);
+      }
+    } catch {
+      Alert.alert(
+        '扫描失败',
+        '请点击右上角刷新按钮重试，或将音乐文件放入 Music 文件夹',
+        [
+          { text: '确定' },
+          { text: '去设置', onPress: () => Linking.openSettings() },
+        ],
+      );
+    }
     setLoading(false);
   }, []);
 
@@ -96,6 +122,9 @@ export default function LocalMusicScreen() {
         <View style={styles.empty}>
           <MaterialCommunityIcons name="music-note-off" size={56} color={colors.textSecondary} />
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>未找到本地音乐</Text>
+          <Text style={[styles.emptyHint, { color: colors.textTertiary }]}>
+            请点击刷新按钮重新扫描{'\n'}或手动将音乐文件放入 Music 文件夹
+          </Text>
         </View>
       ) : (
         <FlatList
@@ -127,8 +156,9 @@ const styles = StyleSheet.create({
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   title: { flex: 1, fontSize: 18, fontWeight: '700', textAlign: 'center' },
   refreshBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 32 },
   emptyText: { fontSize: 15 },
+  emptyHint: { fontSize: 12, textAlign: 'center', lineHeight: 18 },
   item: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
   itemIcon: { width: 44, height: 44, borderRadius: BorderRadius.md, alignItems: 'center', justifyContent: 'center' },
   itemInfo: { marginLeft: Spacing.md, flex: 1 },

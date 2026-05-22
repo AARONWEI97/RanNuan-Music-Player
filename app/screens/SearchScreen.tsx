@@ -15,6 +15,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useSearch } from '../hooks/useSearch';
 import { usePlayer } from '../hooks/usePlayer';
@@ -25,17 +26,21 @@ import { useAppTheme } from '../theme/ThemeContext';
 import { Spacing, BorderRadius } from '../theme/spacing';
 import { Typography } from '../theme/typography';
 import { SEARCH_TYPE_SONG, SEARCH_TYPE_ALBUM, SEARCH_TYPE_ARTIST, SEARCH_TYPE_PLAYLIST } from '../constants/config';
+import { STORAGE_KEYS } from '../constants/storage';
 import type { SongResult, RootStackScreenProps } from '../types';
 import SongList from '../components/music/SongList';
 import NetworkImage from '../components/common/NetworkImage';
 import SongActionSheet from '../components/music/SongActionSheet';
 import CommentList from '../components/comment/CommentList';
 import { useSongActionSheet } from '../hooks/useSongActionSheet';
+import { useReparse } from '../hooks/useReparse';
+import SourcePickerModal from '../components/player/SourcePickerModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = (SCREEN_WIDTH - 48) / 3;
 const MAX_HISTORY = 20;
 const DEBOUNCE_MS = 300;
+const SEARCH_PAGE_SIZE = 100;
 
 interface ArtistResult {
   id: number;
@@ -73,7 +78,7 @@ export default function SearchScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<RootStackScreenProps<'Search'>['navigation']>();
-  const { search, getHotSearch, searchResults, hotSearch, loading: songLoading, searchValue } = useSearch();
+  const { search, getHotSearch, searchResults, hotSearch, loading: songLoading, loadMoreSongs, loadingMore: songLoadingMore, hasMoreSong } = useSearch();
   const { playSong } = usePlayer();
   const { playAll } = usePlaylist();
   const searchStore = useSearchStore();
@@ -86,6 +91,15 @@ export default function SearchScreen() {
   const [playlists, setPlaylists] = useState<PlaylistResult[]>([]);
   const [tabLoading, setTabLoading] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
+
+  // Pagination offsets for grid tabs (artist/album/playlist)
+  const [artistOffset, setArtistOffset] = useState(0);
+  const [albumOffset, setAlbumOffset] = useState(0);
+  const [playlistOffset, setPlaylistOffset] = useState(0);
+  const [hasMoreArtist, setHasMoreArtist] = useState(true);
+  const [hasMoreAlbum, setHasMoreAlbum] = useState(true);
+  const [hasMorePlaylist, setHasMorePlaylist] = useState(true);
+  const [gridLoadingMore, setGridLoadingMore] = useState(false);
 
   const inputRef = useRef<TextInput>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -104,7 +118,12 @@ export default function SearchScreen() {
       if (inputRef.current) {
         inputRef.current.setNativeProps({ text: stored });
       }
+      resetAllOffsets();
       search(stored, SEARCH_TYPE_SONG);
+      performSearch(stored, SEARCH_TYPE_ARTIST);
+      performSearch(stored, SEARCH_TYPE_ALBUM);
+      performSearch(stored, SEARCH_TYPE_PLAYLIST);
+      addToHistory(stored.trim());
       // Clear after consuming
       searchStore.setSearchValue('');
     }
@@ -112,77 +131,162 @@ export default function SearchScreen() {
 
   const loadSearchHistory = useCallback(async () => {
     try {
-      const stored = searchStore.searchValue;
+      const stored = await AsyncStorage.getItem(STORAGE_KEYS.SEARCH_HISTORY);
       if (stored) {
-        setSearchHistory([stored]);
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setSearchHistory(parsed);
+        }
       }
     } catch {}
-  }, [searchStore]);
+  }, []);
+
+  const saveSearchHistory = useCallback(async (history: string[]) => {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.SEARCH_HISTORY, JSON.stringify(history));
+    } catch {}
+  }, []);
 
   const addToHistory = useCallback((kw: string) => {
     if (!kw.trim()) return;
     setSearchHistory((prev) => {
       const filtered = prev.filter((item) => item !== kw);
       const updated = [kw, ...filtered].slice(0, MAX_HISTORY);
+      saveSearchHistory(updated);
       return updated;
     });
-  }, []);
+  }, [saveSearchHistory]);
 
   const clearHistory = useCallback(() => {
     setSearchHistory([]);
-  }, []);
+    saveSearchHistory([]);
+  }, [saveSearchHistory]);
 
-  const performSearch = useCallback(async (kw: string, type: number) => {
+  const performSearch = useCallback(async (kw: string, type: number, append = false) => {
     if (!kw.trim()) return;
-    setTabLoading(true);
+    if (!append) {
+      setTabLoading(true);
+    } else {
+      setGridLoadingMore(true);
+    }
+
+    const currentOffset = (() => {
+      if (type === SEARCH_TYPE_ARTIST) return artistOffset;
+      if (type === SEARCH_TYPE_ALBUM) return albumOffset;
+      if (type === SEARCH_TYPE_PLAYLIST) return playlistOffset;
+      return 0;
+    })();
+
     try {
-      const res = await getSearch({ keywords: kw, type, limit: 30 });
+      const res = await getSearch({
+        keywords: kw,
+        type,
+        limit: SEARCH_PAGE_SIZE,
+        offset: append ? currentOffset + SEARCH_PAGE_SIZE : 0,
+      });
       const result = res?.data?.result;
 
       if (type === SEARCH_TYPE_ARTIST) {
-        const data = result?.artists;
+        const artistResult = result?.artist || result;
+        const data = artistResult?.artists;
         if (Array.isArray(data)) {
-          setArtists(
-            data.map((a: any) => ({
-              id: a.id,
-              name: a.name,
-              picUrl: a.picUrl || a.img1v1Url || '',
-              img1v1Url: a.img1v1Url || '',
-              albumSize: a.albumSize || 0,
-            }))
-          );
+          const mapped = data.map((a: any) => ({
+            id: a.id,
+            name: a.name,
+            picUrl: a.picUrl || a.img1v1Url || '',
+            img1v1Url: a.img1v1Url || '',
+            albumSize: a.albumSize || 0,
+          }));
+          if (append) {
+            setArtists((prev) => [...prev, ...mapped]);
+            setArtistOffset((prev) => prev + SEARCH_PAGE_SIZE);
+          } else {
+            setArtists(mapped);
+            setArtistOffset(0);
+          }
+          setHasMoreArtist(artistResult?.more ?? false);
+        } else if (!append) {
+          setArtists([]);
+          setHasMoreArtist(false);
         }
       } else if (type === SEARCH_TYPE_ALBUM) {
-        const data = result?.albums;
+        const albumResult = result?.album || result;
+        const data = albumResult?.albums;
         if (Array.isArray(data)) {
-          setAlbums(
-            data.map((a: any) => ({
-              id: a.id,
-              name: a.name,
-              picUrl: a.picUrl || a.blurPicUrl || '',
-              artist: { name: a.artist?.name || '', id: a.artist?.id || 0 },
-            }))
-          );
+          const mapped = data.map((a: any) => ({
+            id: a.id,
+            name: a.name,
+            picUrl: a.picUrl || a.blurPicUrl || '',
+            artist: { name: a.artist?.name || '', id: a.artist?.id || 0 },
+          }));
+          if (append) {
+            setAlbums((prev) => [...prev, ...mapped]);
+            setAlbumOffset((prev) => prev + SEARCH_PAGE_SIZE);
+          } else {
+            setAlbums(mapped);
+            setAlbumOffset(0);
+          }
+          setHasMoreAlbum(albumResult?.more ?? false);
+        } else if (!append) {
+          setAlbums([]);
+          setHasMoreAlbum(false);
         }
       } else if (type === SEARCH_TYPE_PLAYLIST) {
-        const data = result?.playLists || result?.playlists;
+        const playlistResult = result?.playList || result;
+        const data = playlistResult?.playLists || playlistResult?.playlists;
         if (Array.isArray(data)) {
-          setPlaylists(
-            data.map((p: any) => ({
-              id: p.id,
-              name: p.name,
-              coverImgUrl: p.coverImgUrl || '',
-              trackCount: p.trackCount || 0,
-              playCount: p.playCount || 0,
-              creator: { nickname: p.creator?.nickname || '' },
-            }))
-          );
+          const mapped = data.map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            coverImgUrl: p.coverImgUrl || '',
+            trackCount: p.trackCount || 0,
+            playCount: p.playCount || 0,
+            creator: { nickname: p.creator?.nickname || '' },
+          }));
+          if (append) {
+            setPlaylists((prev) => [...prev, ...mapped]);
+            setPlaylistOffset((prev) => prev + SEARCH_PAGE_SIZE);
+          } else {
+            setPlaylists(mapped);
+            setPlaylistOffset(0);
+          }
+          setHasMorePlaylist(playlistResult?.more ?? false);
+        } else if (!append) {
+          setPlaylists([]);
+          setHasMorePlaylist(false);
         }
       }
     } catch {
+      if (!append) {
+        if (type === SEARCH_TYPE_ARTIST) { setArtists([]); setHasMoreArtist(false); }
+        if (type === SEARCH_TYPE_ALBUM) { setAlbums([]); setHasMoreAlbum(false); }
+        if (type === SEARCH_TYPE_PLAYLIST) { setPlaylists([]); setHasMorePlaylist(false); }
+      }
     } finally {
       setTabLoading(false);
+      setGridLoadingMore(false);
     }
+  }, [artistOffset, albumOffset, playlistOffset]);
+
+  const loadMoreForTab = useCallback(async (type: number) => {
+    if (gridLoadingMore || tabLoading) return;
+    const hasMore = (() => {
+      if (type === SEARCH_TYPE_ARTIST) return hasMoreArtist;
+      if (type === SEARCH_TYPE_ALBUM) return hasMoreAlbum;
+      if (type === SEARCH_TYPE_PLAYLIST) return hasMorePlaylist;
+      return false;
+    })();
+    if (!hasMore) return;
+    await performSearch(keyword, type, true);
+  }, [keyword, gridLoadingMore, tabLoading, hasMoreArtist, hasMoreAlbum, hasMorePlaylist, performSearch]);
+
+  const resetAllOffsets = useCallback(() => {
+    setArtistOffset(0);
+    setAlbumOffset(0);
+    setPlaylistOffset(0);
+    setHasMoreArtist(true);
+    setHasMoreAlbum(true);
+    setHasMorePlaylist(true);
   }, []);
 
   const handleInputChange = useCallback((text: string) => {
@@ -195,6 +299,7 @@ export default function SearchScreen() {
 
     if (text.trim()) {
       debounceRef.current = setTimeout(() => {
+        resetAllOffsets();
         search(text, SEARCH_TYPE_SONG);
         performSearch(text, SEARCH_TYPE_ARTIST);
         performSearch(text, SEARCH_TYPE_ALBUM);
@@ -202,7 +307,7 @@ export default function SearchScreen() {
         addToHistory(text.trim());
       }, DEBOUNCE_MS);
     }
-  }, [search, performSearch, addToHistory]);
+  }, [search, performSearch, addToHistory, resetAllOffsets]);
 
   const handleKeywordPress = useCallback((kw: string) => {
     setKeyword(kw);
@@ -210,12 +315,13 @@ export default function SearchScreen() {
     if (Platform.OS !== 'web' && inputRef.current) {
       inputRef.current.setNativeProps({ text: kw });
     }
+    resetAllOffsets();
     search(kw, SEARCH_TYPE_SONG);
     performSearch(kw, SEARCH_TYPE_ARTIST);
     performSearch(kw, SEARCH_TYPE_ALBUM);
     performSearch(kw, SEARCH_TYPE_PLAYLIST);
     addToHistory(kw.trim());
-  }, [search, performSearch, addToHistory]);
+  }, [search, performSearch, addToHistory, resetAllOffsets]);
 
   const handleClearInput = useCallback(() => {
     setKeyword('');
@@ -228,14 +334,23 @@ export default function SearchScreen() {
     playSong(song);
   }, [searchResults, playAll, playSong]);
 
-  const { actionSong, showSheet, actionItems, handlePress: handleSongMore, handleClose, commentSongId, showComments, setShowComments } = useSongActionSheet();
+  const { reparseSong, reparseVisible, handleOpenReparse, handleCloseReparse, handleSelectSource } = useReparse();
+  const { actionSong, showSheet, actionItems, handlePress: handleSongMore, handleClose, commentSongId, showComments, setShowComments } = useSongActionSheet({ onReparse: handleOpenReparse });
 
   const handleTabPress = useCallback((type: number) => {
     setActiveTab(type);
     if (keyword.trim() && type !== SEARCH_TYPE_SONG) {
-      performSearch(keyword, type);
+      const hasData = (() => {
+        if (type === SEARCH_TYPE_ARTIST) return artists.length > 0;
+        if (type === SEARCH_TYPE_ALBUM) return albums.length > 0;
+        if (type === SEARCH_TYPE_PLAYLIST) return playlists.length > 0;
+        return false;
+      })();
+      if (!hasData) {
+        performSearch(keyword, type);
+      }
     }
-  }, [keyword, performSearch]);
+  }, [keyword, performSearch, artists.length, albums.length, playlists.length]);
 
   const renderSearchBar = () => (
     <View style={[styles.searchBar, { marginTop: insets.top }]}>
@@ -372,6 +487,19 @@ export default function SearchScreen() {
     </TouchableOpacity>
   );
 
+  const loadMoreFooterEl = useMemo(() => (
+    <View style={styles.loadMoreContainer}>
+      <ActivityIndicator size="small" color={colors.primary} />
+      <Text style={[styles.loadMoreText, { color: colors.textSecondary }]}>加载更多...</Text>
+    </View>
+  ), [colors]);
+
+  const noMoreFooterEl = useMemo(() => (
+    <View style={styles.loadMoreContainer}>
+      <Text style={[styles.loadMoreText, { color: colors.textTertiary }]}>— 已加载全部 —</Text>
+    </View>
+  ), [colors]);
+
   const renderSearchResults = () => {
     const isLoading = activeTab === SEARCH_TYPE_SONG ? songLoading : tabLoading;
 
@@ -397,6 +525,10 @@ export default function SearchScreen() {
                 <Text style={[styles.emptyText, { color: colors.textSecondary }]}>暂无搜索结果</Text>
               </View>
             }
+            ListFooterComponent={songLoadingMore ? loadMoreFooterEl : (!hasMoreSong && searchResults.length > 0 ? noMoreFooterEl : undefined)}
+            contentContainerStyle={{ paddingBottom: 106 }}
+            onEndReached={() => loadMoreSongs(keyword)}
+            onEndReachedThreshold={0.3}
           />
         );
       case SEARCH_TYPE_ARTIST:
@@ -408,16 +540,19 @@ export default function SearchScreen() {
             keyExtractor={(item) => String(item.id)}
             numColumns={3}
             columnWrapperStyle={styles.row}
-            contentContainerStyle={styles.gridContent}
-            initialNumToRender={9}
-            maxToRenderPerBatch={6}
-            windowSize={3}
-            removeClippedSubviews={true}
+            contentContainerStyle={[styles.gridContent, { paddingBottom: 106 }]}
+            initialNumToRender={12}
+            maxToRenderPerBatch={12}
+            windowSize={5}
+            removeClippedSubviews={Platform.OS !== 'web'}
+            onEndReached={() => loadMoreForTab(SEARCH_TYPE_ARTIST)}
+            onEndReachedThreshold={0.3}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Text style={[styles.emptyText, { color: colors.textSecondary }]}>暂无搜索结果</Text>
               </View>
             }
+            ListFooterComponent={gridLoadingMore ? loadMoreFooterEl : (!hasMoreArtist && artists.length > 0 ? noMoreFooterEl : undefined)}
             showsVerticalScrollIndicator={false}
           />
         );
@@ -430,16 +565,19 @@ export default function SearchScreen() {
             keyExtractor={(item) => String(item.id)}
             numColumns={3}
             columnWrapperStyle={styles.row}
-            contentContainerStyle={styles.gridContent}
-            initialNumToRender={9}
-            maxToRenderPerBatch={6}
-            windowSize={3}
-            removeClippedSubviews={true}
+            contentContainerStyle={[styles.gridContent, { paddingBottom: 106 }]}
+            initialNumToRender={12}
+            maxToRenderPerBatch={12}
+            windowSize={5}
+            removeClippedSubviews={Platform.OS !== 'web'}
+            onEndReached={() => loadMoreForTab(SEARCH_TYPE_ALBUM)}
+            onEndReachedThreshold={0.3}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Text style={[styles.emptyText, { color: colors.textSecondary }]}>暂无搜索结果</Text>
               </View>
             }
+            ListFooterComponent={gridLoadingMore ? loadMoreFooterEl : (!hasMoreAlbum && albums.length > 0 ? noMoreFooterEl : undefined)}
             showsVerticalScrollIndicator={false}
           />
         );
@@ -452,16 +590,19 @@ export default function SearchScreen() {
             keyExtractor={(item) => String(item.id)}
             numColumns={3}
             columnWrapperStyle={styles.row}
-            contentContainerStyle={styles.gridContent}
-            initialNumToRender={9}
-            maxToRenderPerBatch={6}
-            windowSize={3}
-            removeClippedSubviews={true}
+            contentContainerStyle={[styles.gridContent, { paddingBottom: 106 }]}
+            initialNumToRender={12}
+            maxToRenderPerBatch={12}
+            windowSize={5}
+            removeClippedSubviews={Platform.OS !== 'web'}
+            onEndReached={() => loadMoreForTab(SEARCH_TYPE_PLAYLIST)}
+            onEndReachedThreshold={0.3}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Text style={[styles.emptyText, { color: colors.textSecondary }]}>暂无搜索结果</Text>
               </View>
             }
+            ListFooterComponent={gridLoadingMore ? loadMoreFooterEl : (!hasMorePlaylist && playlists.length > 0 ? noMoreFooterEl : undefined)}
             showsVerticalScrollIndicator={false}
           />
         );
@@ -484,7 +625,7 @@ export default function SearchScreen() {
       ) : (
         <ScrollView
           style={styles.defaultContent}
-          contentContainerStyle={{ paddingTop: Spacing.md, paddingBottom: 100 }}
+          contentContainerStyle={{ paddingTop: Spacing.md, paddingBottom: 106 }}
           showsVerticalScrollIndicator={false}
         >
           {renderHotSearch()}
@@ -492,6 +633,7 @@ export default function SearchScreen() {
         </ScrollView>
       )}
       <SongActionSheet visible={showSheet} song={actionSong} actions={actionItems} onClose={handleClose} />
+      <SourcePickerModal song={reparseSong} visible={reparseVisible} onClose={handleCloseReparse} onSelectSource={handleSelectSource} />
       <Modal visible={showComments} animationType="slide" onRequestClose={() => setShowComments(false)}>
         <View style={[styles.commentModal, { backgroundColor: colors.background, paddingTop: insets.top }]}>
           <View style={styles.commentHeader}>
@@ -642,9 +784,19 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     ...Typography.body2,
     marginTop: Spacing.sm,
   },
+  loadMoreContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    paddingBottom: 20,
+  },
+  loadMoreText: {
+    ...Typography.caption,
+    marginLeft: Spacing.sm,
+  },
   gridContent: {
     paddingHorizontal: Spacing.md,
-    paddingBottom: 100,
   },
   row: {
     marginBottom: Spacing.md,

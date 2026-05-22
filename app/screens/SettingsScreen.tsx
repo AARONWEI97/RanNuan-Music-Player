@@ -90,7 +90,10 @@ export default function SettingsScreen() {
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
   // Input states
-  const [apiUrlInput, setApiUrlInput] = useState(apiBaseUrl || DEFAULT_API_URL);
+  // 默认地址不暴露 IP，仅当用户自定义过才显示值
+  const [apiUrlInput, setApiUrlInput] = useState(
+    apiBaseUrl && apiBaseUrl !== DEFAULT_API_URL ? apiBaseUrl : ''
+  );
   const [customApiUrlInput, setCustomApiUrlInput] = useState(customApiUrl);
   const [unblockUrlInput, setUnblockUrlInput] = useState(unblockServiceUrl);
   const [lxMusicUrlInput, setLxMusicUrlInput] = useState(lxMusicApiUrl);
@@ -113,7 +116,7 @@ export default function SettingsScreen() {
   }, [apiUrlInput, setApiBaseUrlStore]);
 
   const handleResetApiUrl = useCallback(() => {
-    setApiUrlInput(DEFAULT_API_URL);
+    setApiUrlInput('');
     setApiBaseUrlStore(DEFAULT_API_URL);
     setApiBaseUrl(DEFAULT_API_URL);
   }, [setApiBaseUrlStore]);
@@ -335,7 +338,7 @@ export default function SettingsScreen() {
           <Text style={[styles.optionHint, { color: colors.textTertiary }]}>
             网易云音乐 API 后端服务地址，修改后需重启应用生效
           </Text>
-          {renderUrlInput(apiUrlInput, setApiUrlInput, handleApiUrlSubmit, DEFAULT_API_URL)}
+          {renderUrlInput(apiUrlInput, setApiUrlInput, handleApiUrlSubmit, '当前使用默认服务器地址')}
           <TouchableOpacity onPress={handleResetApiUrl}>
             <Text style={[styles.resetText, { color: colors.primary }]}>重置为默认</Text>
           </TouchableOpacity>

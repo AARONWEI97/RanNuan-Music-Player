@@ -16,6 +16,8 @@ interface ExtraActions {
   playlistId?: number;
   /** 歌单歌曲删除回调 */
   onRemoveFromPlaylist?: (songId: string | number) => void;
+  /** 重新解析回调（用户手动选择音源） */
+  onReparse?: (song: SongResult) => void;
 }
 
 /**
@@ -77,7 +79,15 @@ export function useSongActionSheet(extra?: ExtraActions) {
         icon: 'download-outline',
         onPress: () => {
           download(s);
-          showToast({ title: '已加入下载', type: 'success' });
+          showToast({
+            title: '已加入下载',
+            message: `「${s.name}」正在后台下载`,
+            type: 'success',
+            buttons: [
+              { text: '知道了' },
+              { text: '查看下载', onPress: () => navigation.navigate('Download' as any) },
+            ],
+          });
           handleClose();
         },
       },
@@ -104,6 +114,30 @@ export function useSongActionSheet(extra?: ExtraActions) {
         },
       });
     }
+
+    // 重新解析（货不对板时手动选择音源）
+    if (extra?.onReparse) {
+      items.push({
+        key: 'reparse',
+        label: '选择播放音源',
+        icon: 'swap-horizontal-bold',
+        onPress: () => {
+          handleClose();
+          extra.onReparse?.(s);
+        },
+      });
+    }
+
+    // 相似推荐
+    items.push({
+      key: 'similar',
+      label: '相似推荐',
+      icon: 'shape-plus-outline',
+      onPress: () => {
+        handleClose();
+        navigation.navigate('Similar', { id: Number(s.id), type: 'song' });
+      },
+    });
 
     // 评论
     items.push({

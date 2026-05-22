@@ -10,8 +10,11 @@ interface SongListProps {
   currentSongId?: string | number;
   ListHeaderComponent?: React.ReactElement;
   ListEmptyComponent?: React.ReactElement;
+  ListFooterComponent?: React.ReactElement;
   contentContainerStyle?: ViewStyle;
   refreshControl?: React.ReactElement<RefreshControlProps>;
+  onEndReached?: () => void;
+  onEndReachedThreshold?: number;
 }
 
 const ITEM_HEIGHT = 64;
@@ -23,8 +26,11 @@ export default function SongList({
   currentSongId,
   ListHeaderComponent,
   ListEmptyComponent,
+  ListFooterComponent,
   contentContainerStyle,
   refreshControl,
+  onEndReached,
+  onEndReachedThreshold = 0.3,
 }: SongListProps) {
   // ★ 用 ref 持有回调引用，避免 renderItem 依赖回调变化导致全量重渲染
   const onSongPressRef = useRef(onSongPress);
@@ -64,8 +70,11 @@ export default function SongList({
       getItemLayout={getItemLayout}
       ListHeaderComponent={ListHeaderComponent}
       ListEmptyComponent={ListEmptyComponent}
+      ListFooterComponent={ListFooterComponent}
       contentContainerStyle={contentContainerStyle}
       refreshControl={refreshControl}
+      onEndReached={onEndReached}
+      onEndReachedThreshold={onEndReachedThreshold}
       showsVerticalScrollIndicator={false}
       removeClippedSubviews={true}
       maxToRenderPerBatch={10}

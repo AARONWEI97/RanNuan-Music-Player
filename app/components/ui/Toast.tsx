@@ -65,18 +65,26 @@ export function showLoginExpired() {
   });
 }
 
-export function showDownloadSuccess(songName: string) {
+export function showDownloadSuccess(songName: string, onViewDownloads?: () => void) {
   showToast({
-    title: '下载完成',
-    message: `"${songName}" 已下载`,
+    title: '下载完成 ✅',
+    message: `「${songName}」已保存到本地，详情请去往「我的」页面「下载管理」模块查看`,
     type: 'success',
+    buttons: [
+      { text: '知道了' },
+      ...(onViewDownloads ? [{ text: '查看下载', onPress: onViewDownloads }] : []),
+    ],
   });
 }
 
-export function showDownloadError(songName: string) {
+export function showDownloadError(songName: string, onViewDownloads?: () => void) {
   showToast({
-    title: '下载失败',
-    message: `"${songName}" 下载失败`,
+    title: '下载失败 ❌',
+    message: `「${songName}」下载失败，请检查网络`,
     type: 'error',
+    buttons: [
+      { text: '知道了' },
+      ...(onViewDownloads ? [{ text: '查看下载', onPress: onViewDownloads }] : []),
+    ],
   });
 }

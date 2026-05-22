@@ -7,6 +7,7 @@ const DEFAULT_API_BASE_URL = 'http://139.9.223.233:3000';
 interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
   retryCount?: number;
   noRetry?: boolean;
+  silent?: boolean;
 }
 
 let apiBaseUrl = DEFAULT_API_BASE_URL;
@@ -32,7 +33,8 @@ const TOKEN_KEY = 'auth_token';
 
 request.interceptors.request.use(
   async (config: CustomAxiosRequestConfig) => {
-    config.baseURL = apiBaseUrl;
+    // Fallback: 即使 apiBaseUrl 被意外清空，也不丢失默认值
+    config.baseURL = apiBaseUrl || DEFAULT_API_BASE_URL;
 
     if (config.retryCount === undefined) {
       config.retryCount = 0;
@@ -63,16 +65,11 @@ request.interceptors.request.use(
       console.warn('Failed to read auth token:', e);
     }
 
-    // Debug: log full request URL
-    const fullUrl = `${config.baseURL}${config.url}?${new URLSearchParams(
-      Object.entries(config.params || {}).reduce((acc: Record<string, string>, [k, v]) => {
-        if (v !== undefined && v !== null) acc[k] = String(v);
-        return acc;
-      }, {})
-    ).toString()}`;
-    console.log(`[Request] ${config.method?.toUpperCase()} ${config.url}`, 
-      config.data ? `body=${JSON.stringify(config.data).substring(0, 200)}` : '',
-      `\n  Full URL: ${fullUrl.substring(0, 300)}`);
+    // Log: 仅记录路径，不打印含 cookie 的完整 URL
+    if (__DEV__) {
+      console.log(`[Request] ${config.method?.toUpperCase()} ${config.url}`, 
+        config.data ? `body=${JSON.stringify(config.data).substring(0, 200)}` : '');
+    }
 
     return config;
   },
@@ -83,25 +80,32 @@ request.interceptors.request.use(
 
 request.interceptors.response.use(
   (response) => {
-    console.log(`[Response] ${response.config.url} status=${response.status} code=${response.data?.code}`);
+    if (__DEV__) {
+      console.log(`[Response] ${response.config.url} status=${response.status} code=${response.data?.code}`);
+    }
     return response;
   },
   async (error) => {
     const config = error.config as CustomAxiosRequestConfig;
 
-    // Debug: log error details
-    console.error(
-      `[Response Error] ${config?.url}`,
-      `status=${error.response?.status}`,
-      `data=${JSON.stringify(error.response?.data)?.substring(0, 300)}`,
-      `message=${error.message}`
-    );
+    // 502 = upstream NetEase API error, not an app bug → log as warn
+    const isUpstreamError = error.response?.status === 502 || config?.silent;
+    if (__DEV__) {
+      const logFn = isUpstreamError ? console.warn : console.error;
+      const prefix = config?.silent ? '[Silent]' : isUpstreamError ? '[Upstream 502]' : '[Response Error]';
+      logFn(
+        `${prefix} ${config?.url}`,
+        `status=${error.response?.status}`,
+        `message=${error.message}`
+      );
+    }
 
     if (!config) {
       return Promise.reject(error);
     }
 
-    if (error.response?.status === 301 && config.params?.noLogin !== true) {
+    // 401/403 = 认证失效，清除 token 并触发重新登录
+    if ((error.response?.status === 401 || error.response?.status === 403) && config.params?.noLogin !== true) {
       await AsyncStorage.removeItem(TOKEN_KEY);
       config.retryCount = 3;
     }

@@ -25,6 +25,12 @@ export type RootStackParamList = {
   Comment: { id: number; type: 'music' | 'playlist' | 'album' | 'mv' };
   LocalMusic: undefined;
   Heatmap: undefined;
+  PlaylistSquare: undefined;
+  DailyRecommend: undefined;
+  FollowList: { userId: number; type: 'follows' | 'followeds' };
+  EditProfile: undefined;
+  CommentHistory: undefined;
+  Similar: { id: number; type: 'song' | 'playlist' | 'mv' | 'artist' | 'user' };
 };
 
 export type RootStackScreenProps<T extends keyof RootStackParamList> =
