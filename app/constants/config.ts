@@ -1,5 +1,7 @@
 export const APP_NAME = 'Alger Music';
-export const APP_VERSION = '1.0.0';
+// ★ 版本号从 package.json 自动读取，改版本只需改一处
+import pkg from '../../package.json';
+export const APP_VERSION = pkg.version || '1.0.0';
 export const DEFAULT_API_URL = 'http://139.9.223.233:3000';
 export const DEFAULT_MUSIC_QUALITY = 'exhigh';
 export const MAX_PLAY_HISTORY = 200;

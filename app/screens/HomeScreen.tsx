@@ -27,6 +27,7 @@ import { getBanners, getPersonalizedPlaylist, getRecommendMusic, getHotSinger, g
 import { getToplist } from '../api/list';
 import { useUserStore } from '../store/userStore';
 import { useSearchStore } from '../store/searchStore';
+import { useSettingsStore } from '../store/settingsStore';
 import NetworkImage from '../components/common/NetworkImage';
 import type { SongResult, RootStackScreenProps } from '../types';
 
@@ -408,11 +409,13 @@ export default function HomeScreen() {
       <View style={[styles.fixedHeader, { paddingTop: insets.top }]}>
         <View style={styles.headerRow}>
           <View style={styles.headerLeft}>
-            <Image
-              source={require('../../top-logo.png')}
-              style={styles.headerLogo}
-              resizeMode="contain"
-            />
+            <TouchableOpacity onPress={() => useSettingsStore.getState().setShowDonation(true)}>
+              <Image
+                source={require('../../top-logo.png')}
+                style={styles.headerLogo}
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
             <View style={styles.headerTextWrap}>
               <Text style={styles.headerGreeting}>{getGreeting()}</Text>
               <Text style={styles.headerName} numberOfLines={1}>

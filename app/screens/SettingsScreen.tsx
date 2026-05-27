@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Image,
@@ -139,19 +139,45 @@ export default function SettingsScreen() {
     AsyncStorage.setItem('lxmusic_api_url', url);
   }, [lxMusicUrlInput, setLxMusicApiUrl]);
 
+  // ★ 缓存大小状态
+  const [cacheSize, setCacheSize] = useState<string>('计算中...');
+
+  const refreshCacheSize = useCallback(async () => {
+    try {
+      const bytes = await musicParser.getCacheSize();
+      if (bytes < 1024) {
+        setCacheSize(`${bytes} B`);
+      } else if (bytes < 1024 * 1024) {
+        setCacheSize(`${(bytes / 1024).toFixed(1)} KB`);
+      } else {
+        setCacheSize(`${(bytes / 1024 / 1024).toFixed(2)} MB`);
+      }
+    } catch {
+      setCacheSize('未知');
+    }
+  }, []);
+
+  // 进入音源解析 tab 时刷新缓存大小
+  useEffect(() => {
+    if (activeTab === 'source') {
+      refreshCacheSize();
+    }
+  }, [activeTab, refreshCacheSize]);
+
   const handleClearCache = useCallback(() => {
     Alert.alert('清除缓存', '确定要清除所有音源解析缓存吗？', [
       { text: '取消', style: 'cancel' },
       {
         text: '确定',
         style: 'destructive',
-        onPress: () => {
-          musicParser.clearCache();
+        onPress: async () => {
+          await musicParser.clearCache();
+          refreshCacheSize();
           Alert.alert('提示', '缓存已清除');
         },
       },
     ]);
-  }, []);
+  }, [refreshCacheSize]);
 
   const handleOpenGithub = useCallback(() => {
     Linking.openURL('https://github.com/AARONWEI97/RanNuan-Music-Player').catch(() => {});
@@ -319,7 +345,7 @@ export default function SettingsScreen() {
               <TouchableOpacity style={styles.optionRow} onPress={handleClearCache}>
                 <View style={styles.optionLeft}>
                   <Text style={[styles.optionLabel, { color: colors.text }]}>清除解析缓存</Text>
-                  <Text style={[styles.optionHint, { color: colors.textTertiary }]}>清除所有音源解析缓存数据</Text>
+                  <Text style={[styles.optionHint, { color: colors.textTertiary }]}>当前占用 {cacheSize}</Text>
                 </View>
                 <Text style={[styles.dangerText, { color: colors.error }]}>清除</Text>
               </TouchableOpacity>

@@ -7,6 +7,7 @@ import { SourceConfigManager } from './SongSourceConfigManager';
 
 const URL_CACHE_PREFIX = 'music_url_cache_';
 const URL_CACHE_EXPIRY = 30 * 60 * 1000;
+const URL_CACHE_EXPIRY_MANUAL = 24 * 60 * 60 * 1000; // ★ 手动解析结果缓存 24 小时
 
 /**
  * ★ 内存级失败缓存（与桌面端 CacheManager.failedCacheMap 对齐）
@@ -474,8 +475,9 @@ export class MusicParser {
     try {
       const cached = await AsyncStorage.getItem(`${URL_CACHE_PREFIX}${id}`);
       if (!cached) return null;
-      const { url, timestamp, isTrial } = JSON.parse(cached);
-      if (Date.now() - timestamp > URL_CACHE_EXPIRY) {
+      const { url, timestamp, isTrial, expiry } = JSON.parse(cached);
+      const cacheExpiry = expiry || URL_CACHE_EXPIRY;
+      if (Date.now() - timestamp > cacheExpiry) {
         await AsyncStorage.removeItem(`${URL_CACHE_PREFIX}${id}`);
         return null;
       }
@@ -490,11 +492,11 @@ export class MusicParser {
     }
   }
 
-  async cacheUrl(id: string | number, url: string, isTrial: boolean = false): Promise<void> {
+  async cacheUrl(id: string | number, url: string, isTrial: boolean = false, expiry?: number): Promise<void> {
     try {
       await AsyncStorage.setItem(
         `${URL_CACHE_PREFIX}${id}`,
-        JSON.stringify({ url, timestamp: Date.now(), isTrial })
+        JSON.stringify({ url, timestamp: Date.now(), isTrial, expiry })
       );
     } catch {}
   }
@@ -507,6 +509,25 @@ export class MusicParser {
         await AsyncStorage.multiRemove(cacheKeys);
       }
     } catch {}
+  }
+
+  /** 获取音源解析缓存大小（字节） */
+  async getCacheSize(): Promise<number> {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const cacheKeys = keys.filter((k) => k.startsWith(URL_CACHE_PREFIX));
+      let totalSize = 0;
+      for (const key of cacheKeys) {
+        const value = await AsyncStorage.getItem(key);
+        if (value) {
+          // key + value 的近似字节数（UTF-16 每字符 2 字节）
+          totalSize += (key.length + value.length) * 2;
+        }
+      }
+      return totalSize;
+    } catch {
+      return 0;
+    }
   }
 
   /** 清除指定歌曲的 URL 缓存（播放失败时使用，避免复用坏 URL） */
@@ -553,13 +574,13 @@ export class MusicParser {
       if (entry.extraParam) {
         const url = await (entry.strategy as UnblockApiMatchStrategy).parseWithSource(id, songData, quality, entry.extraParam);
         if (url) {
-          await this.cacheUrl(id, url, false);
+          await this.cacheUrl(id, url, false, URL_CACHE_EXPIRY_MANUAL);
           return url;
         }
       } else {
         const url = await entry.strategy.parse(id, songData, quality);
         if (url) {
-          await this.cacheUrl(id, url, false);
+          await this.cacheUrl(id, url, false, URL_CACHE_EXPIRY_MANUAL);
           return url;
         }
       }

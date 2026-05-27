@@ -20,6 +20,7 @@ interface SettingsState {
   unblockServiceUrl: string;
   lxMusicApiUrl: string;
   enableMusicParsing: boolean;
+  showDonation: boolean;
 }
 
 interface SettingsActions {
@@ -35,12 +36,13 @@ interface SettingsActions {
   setUnblockServiceUrl: (url: string) => void;
   setLxMusicApiUrl: (url: string) => void;
   setEnableMusicParsing: (enable: boolean) => void;
+  setShowDonation: (show: boolean) => void;
   initializeSettings: () => void;
 }
 
 export const useSettingsStore = create<SettingsState & SettingsActions>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       theme: 'dog-light',
       language: 'zh-CN',
       apiBaseUrl: DEFAULT_API_URL,
@@ -53,6 +55,7 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
       unblockServiceUrl: '',
       lxMusicApiUrl: '',
       enableMusicParsing: true,
+      showDonation: false,
 
       setTheme: (theme) => set({ theme }),
       setLanguage: (language) => set({ language }),
@@ -66,6 +69,7 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
       setUnblockServiceUrl: (url) => set({ unblockServiceUrl: url }),
       setLxMusicApiUrl: (url) => set({ lxMusicApiUrl: url }),
       setEnableMusicParsing: (enable) => set({ enableMusicParsing: enable }),
+      setShowDonation: (show) => set({ showDonation: show }),
       initializeSettings: () => {
         const { apiBaseUrl } = get();
         if (apiBaseUrl) {

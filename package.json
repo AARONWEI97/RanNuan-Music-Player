@@ -1,6 +1,6 @@
 {
   "name": "rannuan-music-player",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A cross-platform NetEase Cloud Music player built with React Native + Expo",
   "main": "index.ts",
   "scripts": {
@@ -41,6 +41,7 @@
     "@react-navigation/native-stack": "^7.15.1",
     "axios": "^1.16.1",
     "expo": "~54.0.33",
+    "expo-asset": "~11.0.5",
     "expo-av": "~16.0.8",
     "expo-build-properties": "~1.0.10",
     "expo-file-system": "~19.0.22",

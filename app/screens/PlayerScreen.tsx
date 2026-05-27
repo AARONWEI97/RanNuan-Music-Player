@@ -67,6 +67,7 @@ function ProgressBar({
 }) {
   const barRef = useRef<View>(null);
   const barWidth = useRef(0);
+  const barX = useRef(0);
   const isDragging = useRef(false);
   // ★ 松手后短暂屏蔽 prop 同步，等 seek 完成再恢复
   const cooldownUntil = useRef(0);
@@ -91,18 +92,26 @@ function ProgressBar({
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 2,
-      onPanResponderGrant: () => {
+      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 0,
+      onPanResponderGrant: (evt) => {
         isDragging.current = true;
-      },
-      onPanResponderMove: (_, gs) => {
-        if (barWidth.current <= 0) return;
-        const pct = Math.max(0, Math.min(gs.moveX / (barWidth.current || 1), 1));
+        // ★ 每次开始拖拽时重新测量，防止页面滚动后位置变化
+        barRef.current?.measure((fx, fy, width, height, px, py) => {
+          barX.current = px;
+          barWidth.current = width;
+        });
+        // ★ 立即响应点击位置
+        const pct = Math.max(0, Math.min((evt.nativeEvent.pageX - barX.current) / (barWidth.current || 1), 1));
         fillAnim.setValue(pct);
       },
-      onPanResponderRelease: (_, gs) => {
+      onPanResponderMove: (evt) => {
         if (barWidth.current <= 0) return;
-        const pct = Math.max(0, Math.min(gs.moveX / (barWidth.current || 1), 1));
+        const pct = Math.max(0, Math.min((evt.nativeEvent.pageX - barX.current) / barWidth.current, 1));
+        fillAnim.setValue(pct);
+      },
+      onPanResponderRelease: (evt) => {
+        if (barWidth.current <= 0) return;
+        const pct = Math.max(0, Math.min((evt.nativeEvent.pageX - barX.current) / barWidth.current, 1));
         fillAnim.setValue(pct);
         cooldownUntil.current = Date.now() + 400; // block prop sync while seeking
         onSeek(pct * max);

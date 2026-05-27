@@ -1,0 +1,77 @@
+import { ExpoConfig } from 'expo/config';
+import pkg from './package.json';
+
+const config: ExpoConfig = {
+  name: "RanNuan Music",
+  slug: "rannuan-music-player",
+  // ★ 版本号从 package.json 自动同步，只需改 package.json 一处
+  version: pkg.version,
+  orientation: "portrait",
+  icon: "./assets/icon.png",
+  userInterfaceStyle: "automatic",
+  newArchEnabled: true,
+  splash: {
+    image: "./assets/splash-icon.png",
+    resizeMode: "contain",
+    backgroundColor: "#ffffff",
+  },
+  ios: {
+    supportsTablet: true,
+    bundleIdentifier: "com.rannuanmusic.player",
+    buildNumber: "1",
+    infoPlist: {
+      UIBackgroundModes: ["audio"],
+      NSAppTransportSecurity: {
+        NSAllowsArbitraryLoads: true,
+      },
+    },
+  },
+  android: {
+    adaptiveIcon: {
+      foregroundImage: "./assets/adaptive-icon.png",
+      backgroundColor: "#ffffff",
+    },
+    edgeToEdgeEnabled: true,
+    predictiveBackGestureEnabled: false,
+    package: "com.rannuanmusic.player",
+    versionCode: 1,
+    permissions: [
+      "INTERNET",
+      "ACCESS_NETWORK_STATE",
+      "WAKE_LOCK",
+      "FOREGROUND_SERVICE",
+      "FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+      "POST_NOTIFICATIONS",
+      "android.permission.READ_EXTERNAL_STORAGE",
+      "android.permission.WRITE_EXTERNAL_STORAGE",
+      "android.permission.READ_MEDIA_AUDIO",
+      "android.permission.INTERNET",
+    ],
+  },
+  web: {
+    favicon: "./assets/favicon.png",
+  },
+  plugins: [
+    [
+      "expo-build-properties",
+      {
+        android: {
+          usesCleartextTraffic: true,
+        },
+      },
+    ],
+    [
+      "expo-file-system",
+      {
+        location: "documentDirectory",
+      },
+    ],
+  ],
+  extra: {
+    eas: {
+      projectId: "1bec838c-4110-4cb4-8f0a-c827df80d3a7",
+    },
+  },
+};
+
+export default config;

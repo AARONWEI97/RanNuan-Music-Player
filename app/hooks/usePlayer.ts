@@ -7,7 +7,7 @@ import { usePlayerStore } from '../store/playerStore';
 import { usePlaylistStore } from '../store/playlistStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { getMusicUrl } from '../api/music';
-import { parseMusicUrl } from '../services/musicParserService';
+import { parseMusicUrl, musicParser } from '../services/musicParserService';
 import { getSongLocalUri } from '../services/downloadService';
 import {
   playSong as tpPlaySong,
@@ -219,6 +219,20 @@ async function doPlaySong(song: SongResult): Promise<boolean> {
       playerStore.setIsPlay(true); // ★ 立即更新 UI 状态
       await tpPlaySong(song, localUri);
       console.log(`[Player] 本地播放成功: "${song.name}"`);
+      preloadAndEnqueueNext();
+      return true;
+    }
+
+    // ★ 先查音源解析缓存（用户手动重新解析的结果优先级最高）
+    const cachedUrl = await musicParser.getCachedUrl(song.id);
+    if (cachedUrl) {
+      console.log(`[Player] 命中音源缓存: "${song.name}"`);
+      if (thisGeneration !== _g.__playGeneration) return false;
+      playerStore.setIsLoading(false);
+      playerStore.setPlayMusicUrl(cachedUrl);
+      playerStore.setIsPlay(true);
+      await tpPlaySong(song, cachedUrl);
+      console.log(`[Player] 缓存 URL 播放成功: "${song.name}"`);
       preloadAndEnqueueNext();
       return true;
     }
