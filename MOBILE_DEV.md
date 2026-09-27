@@ -68,11 +68,12 @@ RanNuan Music Player 是一款基于 React Native + Expo 的跨平台移动端�
 
 | 命令 | 作用 |
 |------|------|
-| `npm start` | 启动 Expo（Development Build） |
+| `npm start` | 启动 Expo（Development Build，要连 Metro） |
 | `npm run web` | 启动 Expo Web |
-| `npx expo run:android` | 构建 Android Development Build APK |
+| `npx expo run:android` | 构建并安装调试包（没有 JS bundle，不能当正式包） |
+| `android` 里 `:app:assembleRelease` | 正式安装包，见 [9.6](#96-android-正式安装包) |
 
-> ⚠️ **不再需要本地运行 API**。`DEFAULT_API_URL` 已配置为公网服务器，打包后可直接安装使用，无需任何后端部署。
+> ⚠️ **不再需要本地运行 API**。`DEFAULT_API_URL` 已配置为公网服务器。正式包可以直接安装使用；调试包必须连着 Metro，否则红屏。
 
 #### 测试方式
 
@@ -1172,9 +1173,9 @@ app.listen(3001, () => console.log('Unblock service running on :3001'));
 | 工具 | 版本 | 说明 |
 |------|------|------|
 | Node.js | 22+ | 推荐 v22+ |
-| Android Studio | 最新 | Android SDK + 模拟器（安装到任意盘均可） |
-| JDK | 17 | Android 构建（Gradle foojay 插件自动下载） |
-| Android SDK | API 34+ | 通过 Android Studio SDK Manager 安装 |
+| Android Studio | Quail 1（2026.1）或更新 | 打开的是 `android/`，不是仓库根目录 |
+| JDK | 21 | 本机用 Android Studio 自带的 `D:\AS\jbr`。`D:\Android Studio\jbr` 这条路径不存在，设成 `JAVA_HOME` 会让 Gradle / apksigner 直接失败 |
+| Android SDK | compile / target 36，min 24 | `ANDROID_HOME` 指向 `%LOCALAPPDATA%\Android\Sdk` |
 
 > ⚠️ **Expo Go 不再使用**。项目已迁移至 Development Build 模式。
 
@@ -1208,10 +1209,10 @@ npm start
 
 2. **配置环境变量**：
    ```cmd
-   setx JAVA_HOME "D:\Android Studio\jbr"
+   setx JAVA_HOME "D:\AS\jbr"
    setx ANDROID_HOME "C:\Users\<你的用户名>\AppData\Local\Android\Sdk"
    ```
-   > 重新打开终端后生效
+   > 重新打开终端后生效。先确认 `D:\AS\jbr` 真实存在。旧文档里的 `D:\Android Studio\jbr` 不要再用。
 
 3. **手机设置**：
    - USB 连接电脑，开启文件传输模式
@@ -1426,6 +1427,87 @@ taskkill /PID <进程ID> /F
 # 清除缓存重启
 npx expo start -c
 ```
+
+### 9.6 Android 正式安装包
+
+日常开发用调试包。给手机装、拔掉数据线也能开的，是 **release**。
+
+| 你点的东西 | 实际装上的 | 结果 |
+|------------|------------|------|
+| Android Studio 绿色三角 Run、`npx expo run:android` | debug | 包里没有 `index.android.bundle`。没开 Metro 就红屏：`Unable to load script` |
+| Build Variant 选 preview，或 `:app:assemblePreview` | preview | JS 打进包里，但仍用 `debug.keystore`。这是测试包，不是正式包 |
+| Generate Signed APK 只勾 **release**，或 `:app:assembleRelease` | release | 正式包。JS 打进包里，不依赖 Metro |
+
+#### 用 Android Studio 签名出包
+
+1. 打开 `android` 目录。不要打开仓库根目录。
+2. Build → Generate Signed App Bundle or APK → **APK**（上架 Play 才选 AAB）。
+3. 证书用自己的 keystore。本机文件在项目根目录，文件名是 `rannuan music`（没有扩展名，名字里有空格），别名 `key0`。密码不要写进仓库，也不要写进 `build.gradle`。
+4. 变体只勾 **release**。
+5. 产物一般在 `android/app/release/`。
+
+Android Studio 签名时会注入 `-Pandroid.injected.signing.store.file=...`。文件名里的空格不会把参数拆开。
+
+#### 命令行（调试证书）
+
+`android/app/build.gradle` 里 release 默认仍签 `debug.keystore`（别名 `androiddebugkey`）。这样打出来的包能覆盖手机上的调试包。如果手机上已经装着用 `rannuan music` 签过的包，签名不一致，必须先卸载再装。
+
+```bat
+set JAVA_HOME=D:\AS\jbr
+cd android
+gradlew.bat :app:assembleRelease
+```
+
+产物：`android/app/build/outputs/apk/release/app-release.apk`。
+
+包名 `com.rannuanmusic.player`。`versionName` 跟 `package.json`（当前 1.1.0）。`versionCode` 在 `app.config.ts` 和 `android/app/build.gradle` 里都是 `1`。同一把证书覆盖安装时，要让系统认成升级，先把 `versionCode` 加 1。
+
+#### 明文 HTTP
+
+接口是 `http://139.9.223.233:3000`，歌曲 CDN 也经常是 HTTP。Android 9 以后正式包默认禁止明文。debug / debugOptimized 的清单本来就有 `usesCleartextTraffic`，所以调试时首页正常，正式包会首页空白。
+
+`android/app/src/main/AndroidManifest.xml` 的 `<application>` 必须带：
+
+```xml
+android:usesCleartextTraffic="true"
+tools:replace="android:usesCleartextTraffic"
+```
+
+`app.config.ts` 里 `expo-build-properties` 的 `usesCleartextTraffic: true` 只在 **prebuild** 时写入。`android/` 在 `.gitignore` 里，已经生成过的目录不会自动改。出正式包之前看一眼主清单。
+
+#### 只要 arm64
+
+`android/gradle.properties`：
+
+```properties
+reactNativeArchitectures=arm64-v8a
+```
+
+`armeabi-v7a,arm64-v8a,x86,x86_64` 四个一起编，第一次正式包大约半小时。只留手机用的 64 位后，原生缓存还在时大约几分钟。32 位手机装不上这个包。
+
+#### 依赖下载
+
+这台机器访问 Maven Central 会超时。`react-android` 下不来时，CMake 报 `find_package(ReactAndroid REQUIRED CONFIG)`（界面上经常只看到 CXX1429）。`android/build.gradle` 的 `allprojects.repositories` 把阿里云和华为镜像放在 `google()` 前面。`plugins/withAndroidMavenMirror.js` 会在下次 prebuild 时写回去。
+
+Gradle Sync 里如果弹出 expo-asset 的 `Suppressed sync exceptions`（`ModelCacheV2Impl` 空指针），Sync 本身可以是成功的。这不是编译失败，不要点 Fix with AI，也不必为它重跑 Sync。
+
+#### 目录改名之后
+
+工程路径不要有中文。`移动端` 改成 `mobile` 就是为了这个。`gradle.properties` 里还有 `android.overridePathCheck=true`。
+
+改完文件夹后如果打包报某个 `node_modules\...\build.gradle` 不存在，多半是 `android/build/generated/autolinking/autolinking.json` 还指着旧路径。删掉 `android/build/generated/autolinking`，再执行一次 Gradle。
+
+#### prebuild 会覆盖 android/
+
+不要随手 `expo prebuild --clean`。真要重建时，这两个本地插件会把本机需要的配置写回去：
+
+| 插件 | 写回什么 |
+|------|----------|
+| `plugins/withAndroidPreview.js` | `preview` 构建类型、`reactNativeArchitectures=arm64-v8a`、`android.overridePathCheck=true` |
+| `plugins/withAndroidMavenMirror.js` | 阿里云 + 华为 Maven 镜像 |
+| `expo-build-properties` | `usesCleartextTraffic` |
+
+`preview` 只是给 Android Studio 里不用 Metro 的测试包，签名仍是调试证书。正式安装包用 **release**。
 
 ---
 
@@ -2103,14 +2185,11 @@ const playSong = useCallback(async (song: SongResult): Promise<boolean> => {
 
 **现象**：构建时报错 `Unable to find a JDK 17 installation`
 
-**原因**：Android Studio 安装在 D 盘（`D:\Android Studio\jbr`），自带 JDK 21，但 Gradle 要求 JDK 17。系统 `JAVA_HOME` 设置后需重新开终端才生效。
+**原因**：当时 Android Studio 自带 JDK 21，Gradle 工具链却在找 JDK 17。系统 `JAVA_HOME` 设置后需重新开终端才生效。
 
-**修复**：
-1. `android/gradle.properties` 添加：`org.gradle.java.installations.paths=D\\:\\\\Android Studio\\\\jbr`
-2. `android/settings.gradle` 添加 foojay 工具链解析插件：`id("org.gradle.toolchains.foojay-resolver-convention") version "0.9.0"`
-3. Gradle 会自动下载 JDK 17
+**当时的修复**：给 Gradle 配 JDK 路径，并用 foojay 插件下载 JDK 17。
 
-**涉及文件**：`android/gradle.properties`、`android/settings.gradle`
+**现在**：本机 Android Studio 在 `D:\AS\jbr`（JDK 21），Gradle 8.14 直接用它即可。`D:\Android Studio\jbr` 这个目录不存在，不要再设成 `JAVA_HOME`。正式包命令见 [9.6](#96-android-正式安装包)。
 
 ---
 

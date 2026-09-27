@@ -122,18 +122,29 @@ npm run web
 
 > ⚠️ 项目已迁移至 Development Build，使用 `npm start`（即 `expo start --dev-client --clear`）
 
-### 构建 APK
+### 构建正式 APK
 
-```bash
-# 安装 EAS CLI（首次）
-npm install -g eas-cli
+给手机安装、不连电脑就能打开的是 **release** 包。Android Studio 绿色三角 Run、`npx expo run:android` 装的是调试包，里面没有 `index.android.bundle`。不连 Metro 会红屏：`Unable to load script`。
 
-# 登录 Expo 账号（首次）
-eas login
+用 Android Studio 打开 **`android` 目录**（不要打开仓库根目录）：
 
-# 构建 Android APK
-npx eas build --platform android --profile preview
+1. Build → Generate Signed App Bundle or APK → 选 **APK**
+2. 选自己的签名证书（本机文件 `rannuan music`，别名 `key0`，密码不进仓库）
+3. 变体只勾 **release**。不要勾 debug，也不要勾 preview
+
+命令行也可以打 release 包。这条命令用项目里的 `debug.keystore` 签名，能覆盖调试包；盖不过用自己证书签过的包，要先卸载旧应用：
+
+```bat
+set JAVA_HOME=D:\AS\jbr
+cd android
+gradlew.bat :app:assembleRelease
 ```
+
+产物：`android/app/build/outputs/apk/release/app-release.apk`
+
+只编 `arm64-v8a`。四个 CPU 架构一起编，第一次正式包要几十分钟。接口是 HTTP，正式包清单必须开 `usesCleartextTraffic`，否则首页请求发不出去。`android/` 被 git 忽略，细节见 [MOBILE_DEV.md 第九章 9.6](./MOBILE_DEV.md)。
+
+EAS 云端构建仍保留在 `eas.json`，当前本机打包不走 EAS。
 
 ---
 
@@ -194,8 +205,9 @@ npx eas build --platform android --profile preview
 │   └── utils/            # 工具函数
 ├── assets/               # 图标/图片
 ├── App.tsx               # 应用入口
-├── app.json              # Expo 配置
-├── eas.json              # EAS Build 配置
+├── app.config.ts         # Expo 配置
+├── plugins/              # prebuild 时写回 Android 镜像、架构、preview 变体
+├── eas.json              # EAS Build 配置（本机正式包不走这里）
 └── MOBILE_DEV.md         # 详细开发文档
 ```
 

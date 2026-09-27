@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import TrackPlayer, {
   Event,
   Capability,
@@ -373,6 +374,8 @@ export async function playSong(song: SongResult, url: string): Promise<void> {
   resetPlaybackEndState();
   // ★ 清除去重标志，允许新歌触发 ActiveTrackChanged
   lastActiveTrackId = null;
+  // 让进行中的预加载发现队列已经被换掉，不要把旧的下一首加回来
+  try { await AsyncStorage.setItem('tp-play-gen', String(Date.now())); } catch {}
 
   try {
     const track = songToTrack(song, url);

@@ -52,6 +52,8 @@ const config: ExpoConfig = {
     favicon: "./assets/favicon.png",
   },
   plugins: [
+    "./plugins/withAndroidPreview",
+    "./plugins/withAndroidMavenMirror",
     [
       "expo-build-properties",
       {

@@ -41,7 +41,12 @@ export default function LocalMusicScreen() {
         permResult = await MediaLibrary.requestPermissionsAsync();
       } catch {
         // "不再询问" 模式下可能直接抛异常
-        permResult = { status: 'denied', granted: false, canAskAgain: false, expires: 'never' };
+        permResult = {
+          status: MediaLibrary.PermissionStatus.DENIED,
+          granted: false,
+          canAskAgain: false,
+          expires: 'never',
+        };
       }
 
       if (!permResult.granted) {
@@ -89,11 +94,11 @@ export default function LocalMusicScreen() {
   useEffect(() => { scanLocal(); }, [scanLocal]);
 
   const handlePlay = (audio: LocalAudio, idx: number) => {
-    const songs: SongResult[] = audios.map((a) => ({
+    const songs = audios.map((a) => ({
       id: a.id, name: a.name, ar: [{ name: a.artist, id: 0 }],
       al: { name: '本地音乐', id: 0, picUrl: '' }, dt: (a.duration || 0) * 1000,
       picUrl: '', duration: (a.duration || 0) * 1000, count: 0,
-    }));
+    })) as SongResult[];
     playAll(songs, idx);
     playSong(songs[0]);
   };

@@ -12,7 +12,8 @@
     "dev": "concurrently \"npm run api\" \"expo start\"",
     "dev:web": "concurrently \"npm run api\" \"expo start --web\"",
     "postinstall": "node scripts/patch-zustand.js && node scripts/patch-rntp.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "expo lint"
   },
   "repository": {
     "type": "git",
@@ -69,6 +70,7 @@
     "@types/react": "~19.1.0",
     "babel-preset-expo": "~54.0.10",
     "concurrently": "^9.2.1",
+    "eslint-config-expo": "~10.0.0",
     "expo-module-scripts": "^55.0.2",
     "sharp": "^0.34.5",
     "typescript": "~5.9.2"

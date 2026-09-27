@@ -1,7 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import { Platform, Alert, AppState, type AppStateStatus } from 'react-native';
 import TrackPlayer, { State } from 'react-native-track-player';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { usePlayerStore } from '../store/playerStore';
 import { usePlaylistStore } from '../store/playlistStore';
@@ -11,7 +10,6 @@ import { parseMusicUrl, musicParser } from '../services/musicParserService';
 import { getSongLocalUri } from '../services/downloadService';
 import {
   playSong as tpPlaySong,
-  addNextToQueue as tpAddNextToQueue,
   togglePlayback as tpTogglePlayback,
   seekTo as tpSeekTo,
   setVolume as tpSetVolume,
@@ -26,6 +24,7 @@ import {
   setOnManualNext,
 } from '../services/trackPlayerService';
 import { PLAY_MODE_LOOP, PLAY_MODE_SEQUENTIAL, PLAY_MODE_SHUFFLE } from '../constants/config';
+import { ensureNativeQueue, playRemotePrevious } from '../services/queueKeeper';
 import type { SongResult } from '../types';
 
 const isWeb = Platform.OS === 'web';
@@ -47,6 +46,8 @@ if (_g.__isActiveTrackSyncing === undefined) _g.__isActiveTrackSyncing = false;
 if (_g.__isManualNextSyncing === undefined) _g.__isManualNextSyncing = false;
 // ★ 连续播放失败计数器（防止无限循环重试）
 if (_g.__consecutiveFailCount === undefined) _g.__consecutiveFailCount = 0;
+// ★ doPlaySong 进行中：进度轮询不要把原生侧还没切走的旧曲当成自动切歌
+if (_g.__isPlayTransitioning === undefined) _g.__isPlayTransitioning = false;
 const MAX_CONSECUTIVE_FAILS = 5;
 
 // 从持久化 store 初始化 currentPlayingSongId
@@ -57,49 +58,6 @@ try {
   }
 } catch {}
 
-/**
- * ★★★ 新架构核心：确定下一首要播放的歌曲 ★★★
- * 统一的"下一首"逻辑，供预加载和手动切歌共用
- */
-function getNextSongInfo(): { song: SongResult; index: number } | null {
-  const store = usePlaylistStore.getState();
-  if (store.playList.length === 0) return null;
-
-  const playMode = store.playMode;
-
-  if (playMode === PLAY_MODE_LOOP) {
-    const song = store.getCurrentSong();
-    return song ? { song, index: store.playListIndex } : null;
-  }
-
-  if (playMode === PLAY_MODE_SHUFFLE) {
-    if (store.playList.length <= 1) {
-      const song = store.getCurrentSong();
-      return song ? { song, index: store.playListIndex } : null;
-    }
-    // 使用"确定性下一首"策略
-    if (_g.__nextShuffleIndex === undefined || _g.__nextShuffleIndex === null
-        || _g.__nextShuffleIndex >= store.playList.length
-        || _g.__nextShuffleIndex === store.playListIndex) {
-      do {
-        _g.__nextShuffleIndex = Math.floor(Math.random() * store.playList.length);
-      } while (_g.__nextShuffleIndex === store.playListIndex && store.playList.length > 1);
-    }
-    const idx = _g.__nextShuffleIndex;
-    return { song: store.playList[idx], index: idx };
-  }
-
-  // 顺序/列表循环
-  if (store.playList.length === 0) return null;
-
-  let nextIndex = store.playListIndex + 1;
-  if (nextIndex >= store.playList.length) {
-    if (playMode === PLAY_MODE_SEQUENTIAL) return null;
-    nextIndex = 0;
-  }
-  return { song: store.playList[nextIndex], index: nextIndex };
-}
-
 /** 消费随机模式的 nextShuffleIndex（切歌后生成新的） */
 function consumeShuffleIndex(usedIndex: number) {
   const store = usePlaylistStore.getState();
@@ -109,60 +67,12 @@ function consumeShuffleIndex(usedIndex: number) {
 }
 
 /**
- * ★★★ 新架构核心：预加载下一首并加入原生队列 ★★★
- * 替代旧的 AsyncStorage 跨上下文通信——预加载完成后直接 addNextToQueue
- * 原生层会在当前歌曲结束后自动播放队列里的下一首
+ * 开播后立刻把后面几首放进原生队列。
+ * 不能等到最后 60 秒：用户往往一开始就锁屏，主线程随即被冻住，来不及再入队。
  */
-async function preloadNextSongIfNeeded(currentPosition: number, currentDuration: number, force: boolean = false) {
-  if (currentDuration <= 0 || currentPosition <= 0) return;
-  if (!force && currentDuration - currentPosition > 60) return;
-  if (_g.__isPreloading) return;
-  if (!_g.__currentPlayingSongId) return;
-
-  const nextInfo = getNextSongInfo();
-  if (!nextInfo) return;
-
-  const nextSong = nextInfo.song;
-  // 如果已经预加载过该歌曲，跳过
-  if (_g.__preloadedNextSong?.songId === nextSong.id) return;
-
-  _g.__isPreloading = true;
-  console.log(`[Player] ⏳ 触发预加载 (剩余${(currentDuration - currentPosition).toFixed(1)}s): "${nextSong.name}"`);
-
-  try {
-    // 1. 本地检查
-    const localUri = getSongLocalUri(nextSong.id);
-    if (localUri) {
-      _g.__preloadedNextSong = { songId: nextSong.id, url: localUri };
-      console.log(`[Player] ✅ 预加载完成 (本地): "${nextSong.name}"`);
-      // ★ 直接加入原生队列
-      await tpAddNextToQueue(nextSong, localUri);
-      return;
-    }
-
-    // 2. 在线请求与VIP解析
-    const res = await getMusicUrl(Number(nextSong.id));
-    let url = res?.data?.data?.[0]?.url;
-    const isTrial = !!res?.data?.data?.[0]?.freeTrialInfo;
-    const { enableMusicParsing, musicQuality } = useSettingsStore.getState();
-
-    if ((isTrial || !url) && enableMusicParsing) {
-      url = await parseMusicUrl(nextSong.id, nextSong, musicQuality, true);
-    }
-
-    if (url) {
-      _g.__preloadedNextSong = { songId: nextSong.id, url };
-      console.log(`[Player] ✅ 预加载完成 (在线/解析): "${nextSong.name}"`);
-      // ★ 直接加入原生队列
-      await tpAddNextToQueue(nextSong, url);
-    } else {
-      console.log(`[Player] ❌ 预加载失败: 无可用 URL`);
-    }
-  } catch (e) {
-    console.error(`[Player] ❌ 预加载异常:`, e);
-  } finally {
-    _g.__isPreloading = false;
-  }
+function preloadAndEnqueueNext() {
+  _g.__preloadedNextSong = null;
+  ensureNativeQueue('play-start').catch(() => {});
 }
 
 /**
@@ -175,6 +85,9 @@ async function doPlaySong(song: SongResult): Promise<boolean> {
   // 同时作为 handleActiveTrackChanged 的判断依据：
   // 若 ActiveTrackChanged 的 track.id === __currentPlayingSongId，说明是主动播放触发，不需要重复同步状态
   _g.__currentPlayingSongId = song.id;
+  const transitionToken = (_g.__transitionToken || 0) + 1;
+  _g.__transitionToken = transitionToken;
+  _g.__isPlayTransitioning = true;
 
   const thisGeneration = ++_g.__playGeneration;
   console.log(`[Player] playSong: "${song.name}" (gen=${thisGeneration})`);
@@ -285,25 +198,12 @@ async function doPlaySong(song: SongResult): Promise<boolean> {
       playerStore.setIsLoading(false);
     }
     return false;
+  } finally {
+    // 晚一点放开，避免 play() 返回后原生 active 轨还没切过来，轮询把索引拉回旧歌
+    setTimeout(() => {
+      if (_g.__transitionToken === transitionToken) _g.__isPlayTransitioning = false;
+    }, 400);
   }
-}
-
-/**
- * ★ 预加载下一首并加入原生队列
- * 播放新歌后调用，确保原生队列里有 next track
- */
-function preloadAndEnqueueNext() {
-  // ★ 先清除旧缓存，确保预加载的是当前歌曲的下一首（而非上一首的）
-  _g.__preloadedNextSong = null;
-  // 使用 setTimeout 避免阻塞 doPlaySong 的返回
-  setTimeout(async () => {
-    try {
-      const progress = await TrackPlayer.getProgress();
-      if (progress.duration > 0) {
-        await preloadNextSongIfNeeded(progress.position, progress.duration, true);
-      }
-    } catch {}
-  }, 100);
 }
 
 /**
@@ -321,6 +221,11 @@ function handleActiveTrackChanged(track: any) {
 
   if (idx === -1) {
     console.log(`[Player] ActiveTrackChanged: songId=${songId} 不在播放列表中`);
+    return;
+  }
+
+  if (_g.__isPlayTransitioning && String(songId) !== String(_g.__currentPlayingSongId)) {
+    console.log('[Player] 切歌进行中，忽略尚未切走的旧曲');
     return;
   }
 
@@ -370,12 +275,8 @@ function handleActiveTrackChanged(track: any) {
  * ★ 播放结束 fallback：队列无下一首时的 JS 层处理
  * 正常情况下原生队列自动切歌，此回调只在预加载未完成时触发
  */
-function onPlaybackEnd() {
-  console.log('[Player] ★ 音频播放结束（队列无下一首，JS fallback） ★');
-  const store = usePlaylistStore.getState();
-  const playMode = store.playMode;
-
-  // ★ 连续失败保护：防止某首歌持续无法播放导致无限循环
+async function onPlaybackEnd() {
+  console.log('[Player] 播放结束，尝试从原生队列续播');
   if (_g.__consecutiveFailCount >= MAX_CONSECUTIVE_FAILS) {
     console.log(`[Player] 连续 ${MAX_CONSECUTIVE_FAILS} 次播放失败，停止自动切歌`);
     usePlayerStore.getState().setIsPlay(false);
@@ -383,39 +284,28 @@ function onPlaybackEnd() {
     return;
   }
 
-  if (playMode === PLAY_MODE_LOOP) {
-    console.log('[Player] 单曲循环模式，重播当前歌曲');
-    const currentSong = store.getCurrentSong();
-    if (currentSong) {
-      const success = doPlaySong(currentSong);
-      // doPlaySong 是 async，用 then 检查结果
-      success.then(ok => {
-        _g.__consecutiveFailCount = ok ? 0 : _g.__consecutiveFailCount + 1;
-      });
+  try {
+    // 不要在这里 doPlaySong：那会 reset 队列，把已经准备好的下一首清掉
+    await ensureNativeQueue('playback-end');
+    const playback = await TrackPlayer.getPlaybackState();
+    const moving =
+      playback.state === State.Playing ||
+      playback.state === State.Buffering ||
+      playback.state === State.Loading;
+    const track = await TrackPlayer.getActiveTrack();
+    if (track && String(track.id) !== String(_g.__currentPlayingSongId)) {
+      handleActiveTrackChanged(track);
     }
-    return;
+    usePlayerStore.getState().setIsPlay(moving);
+    if (moving) {
+      _g.__consecutiveFailCount = 0;
+    } else {
+      _g.__consecutiveFailCount += 1;
+      console.log('[Player] 没有可续播的下一首');
+    }
+  } catch (e) {
+    console.warn('[Player] 播放结束处理失败:', e);
   }
-
-  if (playMode === PLAY_MODE_SEQUENTIAL && store.playListIndex >= store.playList.length - 1) {
-    console.log('[Player] 顺序播放到末尾，停止');
-    usePlayerStore.getState().setIsPlay(false);
-    return;
-  }
-
-  // 获取下一首并播放
-  const nextInfo = getNextSongInfo();
-  if (!nextInfo) return;
-
-  if (store.playMode === PLAY_MODE_SHUFFLE) {
-    consumeShuffleIndex(nextInfo.index);
-  }
-
-  // ★ 先更新 ID 再 setPlayListIndex，避免 useEffect 误判为手动切歌
-  _g.__currentPlayingSongId = nextInfo.song.id;
-  store.setPlayListIndex(nextInfo.index);
-  doPlaySong(nextInfo.song).then(ok => {
-    _g.__consecutiveFailCount = ok ? 0 : _g.__consecutiveFailCount + 1;
-  });
 }
 
 // 重载并播放（TrackPlayer 无 track 或 Source error 时使用）
@@ -482,23 +372,29 @@ async function initializePlayer() {
     store.setCurrentProgress(update.position);
     if (update.duration > 0) store.setDuration(update.duration);
     store.setIsPlay(update.isPlaying);
-    preloadNextSongIfNeeded(update.position, update.duration);
   });
 
   // 设置重载播放回调
   setOnReloadAndPlay(reloadAndPlay);
 
-  // ★ 设置 RemotePrevious 回调（通知栏/锁屏"上一首"按钮）
-  // 队列中没有 previous track，由 JS 层直接处理
+  // 通知栏/锁屏「上一首」。后台服务里也有一份监听，由 playRemotePrevious 去重。
   setOnRemotePrev(() => {
     console.log('[Player] RemotePrev 回调触发');
-    // ★ 立即清除 AsyncStorage pending action，防止 AppState handler 重复处理
-    AsyncStorage.removeItem('pending_remote_action').catch(() => {});
-    const store = usePlaylistStore.getState();
-    if (store.playList.length === 0) return;
-    store.prevPlay();
-    const song = usePlaylistStore.getState().getCurrentSong();
-    if (song) doPlaySong(song);
+    const beforeId = _g.__currentPlayingSongId;
+    playRemotePrevious().then(async (playedHere) => {
+      if (playedHere) return;
+      // 后台上下文抢到了这次切歌。等原生曲目变了再同步界面，不要再切一次。
+      for (let i = 0; i < 15; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        try {
+          const track = await TrackPlayer.getActiveTrack();
+          if (track && String(track.id) !== String(beforeId)) {
+            handleActiveTrackChanged(track);
+            return;
+          }
+        } catch {}
+      }
+    }).catch((e) => console.warn('[Player] RemotePrev 失败:', e));
   });
 
   // ★ 设置 ManualNext 回调（队列无下一首时的 JS fallback）
@@ -679,10 +575,7 @@ export function usePlayer() {
       await tpSeekTo(position);
       usePlayerStore.getState().setCurrentProgress(position);
 
-      const duration = usePlayerStore.getState().duration;
-      if (duration > 0) {
-        preloadNextSongIfNeeded(position, duration);
-      }
+      ensureNativeQueue('seek').catch(() => {});
     } catch (e) {
       console.error('[Player] seekTo 错误:', e);
     }
@@ -710,48 +603,29 @@ export function usePlayer() {
     // ★ 进度轮询：触发预加载检查
     const progressPollTimer = setInterval(async () => {
       try {
-        const progress = await TrackPlayer.getProgress();
-        preloadNextSongIfNeeded(progress.position, progress.duration);
+        if (_g.__isPlayTransitioning) return;
+        const track = await TrackPlayer.getActiveTrack();
+        if (track && String(track.id) !== String(_g.__currentPlayingSongId)) {
+          handleActiveTrackChanged(track);
+          return;
+        }
+        await ensureNativeQueue('progress');
       } catch {}
     }, 2000);
 
     // ★ App 回到前台时，同步状态 + 检查 pending action
     const appStateSubscription = AppState.addEventListener('change', async (nextState: AppStateStatus) => {
       if (nextState === 'active') {
-        syncPlaybackState();
-        // ★ 检查 PlaybackService 写入的 pending action（如锁屏按"上一首"）
-        try {
-          const raw = await AsyncStorage.getItem('pending_remote_action');
-          if (raw) {
-            const { action, timestamp } = JSON.parse(raw);
-            // 只处理 10 秒内的 action，过期忽略
-            if (Date.now() - timestamp < 10000) {
-              await AsyncStorage.removeItem('pending_remote_action');
-              if (action === 'prev') {
-                console.log('[Player] 处理锁屏 pending_prev');
-                // 内联 prev 逻辑，因为 prev callback 还未创建
-                const store = usePlaylistStore.getState();
-                if (store.playList.length > 0) {
-                  store.prevPlay();
-                  const song = store.getCurrentSong();
-                  if (song) doPlaySong(song);
-                }
-              }
-            } else {
-              await AsyncStorage.removeItem('pending_remote_action');
-            }
-          }
-        } catch (e) {
-          console.warn('[Player] 检查 pending action 失败:', e);
+        if (!_g.__isPlayTransitioning) {
+          try {
+            const track = await TrackPlayer.getActiveTrack();
+            if (track) handleActiveTrackChanged(track);
+          } catch {}
         }
-      } else if (nextState === 'background') {
-        // ★ 进入后台时主动触发预加载 + 加入原生队列
-        try {
-          const progress = await TrackPlayer.getProgress();
-          if (progress.duration > 0 && progress.position > 0) {
-            preloadNextSongIfNeeded(progress.position, progress.duration, true);
-          }
-        } catch {}
+        syncPlaybackState();
+      } else if (nextState === 'background' || nextState === 'inactive') {
+        // 锁屏在 iOS 上常常只到 inactive，不会进 background。两种都要提前把下一首放进原生队列。
+        ensureNativeQueue(nextState).catch(() => {});
       }
     });
 

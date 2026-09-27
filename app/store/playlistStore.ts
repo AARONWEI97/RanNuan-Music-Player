@@ -4,7 +4,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import type { SongResult } from '../types';
 import { usePlayerStore } from './playerStore';
-import { stopPlayback, clearNextInQueue } from '../services/trackPlayerService';
+import { stopPlayback } from '../services/trackPlayerService';
+import { onPlayModeChanged } from '../services/queueKeeper';
 
 type MinifiedSong = Pick<SongResult, 'id' | 'name' | 'picUrl' | 'dt' | 'duration' | 'source'> & {
   ar: { id: number; name: string }[] | undefined;
@@ -110,19 +111,11 @@ export const usePlaylistStore = create<PlaylistState & PlaylistActions>()(
       togglePlayMode: () => {
         const { playMode } = get();
         set({ playMode: (playMode + 1) % 3 });
-        // ★ 清除原生队列中的 next track，让新模式重新预加载
-        clearNextInQueue().catch(() => {});
-        // ★ 重置随机索引和预加载缓存
-        const _g = global as any;
-        _g.__nextShuffleIndex = null;
-        _g.__preloadedNextSong = null;
+        onPlayModeChanged().catch(() => {});
       },
       setPlayMode: (mode: number) => {
         set({ playMode: mode });
-        clearNextInQueue().catch(() => {});
-        const _g = global as any;
-        _g.__nextShuffleIndex = null;
-        _g.__preloadedNextSong = null;
+        onPlayModeChanged().catch(() => {});
       },
 
       nextPlay: () => {

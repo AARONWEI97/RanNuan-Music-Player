@@ -1,29 +1,27 @@
 import TrackPlayer, { Event, State } from 'react-native-track-player';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const PENDING_REMOTE_ACTION_KEY = 'pending_remote_action';
+import { ensureNativeQueue, playRemotePrevious } from './queueKeeper';
 
 /**
  * TrackPlayer 后台播放服务
  *
- * ★★★ 新架构：切歌完全由原生队列自动处理 ★★★
- * - 不再监听 PlaybackState.Ended 做自动切歌
- * - 不再使用 AsyncStorage 跨上下文通信
- * - RemoteNext/RemotePrev 直接调用原生 skipToNext/skipToPrevious
- * - 原生队列有下一首时，skipToNext() 零延迟生效
- * - 原生队列无下一首时，歌曲结束后进入 Ended 状态，主 app 恢复后 JS fallback 处理
+ * 锁屏后主界面 JS 会冻结。这里继续把「下下首」补进原生队列，
+ * 歌曲已经结束但队列刚补上时，负责 skip 续播。
+ * 「上一首」和主界面共用 playRemotePrevious，跨上下文只切一次。
  */
 
 // ★ 使用 global 标志防止热更新后重复注册
 const _g = global as any;
 if (!_g.__PB_LISTENERS_REGISTERED) _g.__PB_LISTENERS_REGISTERED = false;
 
-export const PlaybackService = async function () {
+export const PlaybackService = async function (): Promise<void> {
+  // 这个函数只在 headless 上下文里被原生调用。主 bundle import 它不会走到这里。
+  (global as any).__PB_HEADLESS = true;
   console.log('[PB] PlaybackService 初始化');
 
   if (_g.__PB_LISTENERS_REGISTERED) {
     console.log('[PB] 监听已注册，跳过');
-    return new Promise(() => {});
+    return new Promise<void>(() => {});
   }
   _g.__PB_LISTENERS_REGISTERED = true;
 
@@ -52,19 +50,10 @@ export const PlaybackService = async function () {
   // 此处不再重复注册，避免两个 handler 同时 skipToNext 造成竞态
 
   // ========== RemotePrevious ==========
-  // ★ 队列结构是 [current, next]，没有 previous track
-  // 直接写入 pending action，主 app 恢复后处理
-  // 不调用 skipToPrevious()——它不会抛异常，而是跳到当前歌曲开头重新缓冲
-  TrackPlayer.addEventListener(Event.RemotePrevious, async () => {
-    console.log('[PB] RemotePrevious → 写入 pending_prev');
-    try {
-      await AsyncStorage.setItem(PENDING_REMOTE_ACTION_KEY, JSON.stringify({
-        action: 'prev',
-        timestamp: Date.now(),
-      }));
-    } catch (e) {
-      console.error('[PB] 写入 pending_prev 失败:', e);
-    }
+  // 与主界面监听器都会收到事件。playRemotePrevious 内部去重，避免亮屏连跳两首。
+  TrackPlayer.addEventListener(Event.RemotePrevious, () => {
+    console.log('[PB] RemotePrevious');
+    playRemotePrevious().catch((e) => console.error('[PB] RemotePrevious 失败:', e));
   });
 
   // ========== RemoteSeek ==========
@@ -86,8 +75,8 @@ export const PlaybackService = async function () {
     }
   });
 
-  // ========== PlaybackState（仅日志）==========
-  // ★ 不再处理 State.Ended — 切歌由原生队列自动完成
+  // ========== PlaybackState ==========
+  // 锁屏时主界面 JS 会被冻住。队列里没有下一首时，在这里补队并续播。
   let lastPbState: State | null = null;
   TrackPlayer.addEventListener(Event.PlaybackState, ({ state }) => {
     if (state !== lastPbState) {
@@ -95,6 +84,25 @@ export const PlaybackService = async function () {
       console.log(`[PB] PlaybackState: ${stateName}`);
       lastPbState = state;
     }
+    if (state === State.Ended) {
+      ensureNativeQueue('pb-ended').catch(() => {});
+    }
+  });
+
+  TrackPlayer.addEventListener(Event.PlaybackActiveTrackChanged, () => {
+    ensureNativeQueue('pb-active').catch(() => {});
+  });
+
+  TrackPlayer.addEventListener(Event.PlaybackQueueEnded, () => {
+    ensureNativeQueue('pb-queue-ended').catch(() => {});
+  });
+
+  let lastEnsureAt = 0;
+  TrackPlayer.addEventListener(Event.PlaybackProgressUpdated, () => {
+    const now = Date.now();
+    if (now - lastEnsureAt < 8000) return;
+    lastEnsureAt = now;
+    ensureNativeQueue('pb-progress').catch(() => {});
   });
 
   // ========== PlaybackError ==========
@@ -105,5 +113,5 @@ export const PlaybackService = async function () {
   console.log('[PB] ★ PlaybackService 事件监听注册完成 ★');
 
   // ★ 关键：返回永不 resolve 的 Promise，保持服务存活
-  return new Promise(() => {});
+  return new Promise<void>(() => {});
 };
